@@ -1,0 +1,55 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/settings.local.json
+
+# Node.js / TypeScript
+node_modules/
+dist/
+build/
+*.js.map
+*.d.ts
+!**/*.d.ts.map
+npm-debug.log*
+yarn-error.log
+pnpm-debug.log*
+.npm
+.pnp.*
+.yarn/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Build / test artifacts
+coverage/
+.coverage
+htmlcov/
+*.log
+tmp/
+temp/
