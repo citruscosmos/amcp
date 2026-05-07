@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { IediStore } from '../storage/iedi-store.js';
 import type { WorkDomain } from '../storage/iedi-store.js';
 
@@ -28,7 +28,7 @@ program
   .command('start')
   .description('Open a new IEDI record (errors if an open record already exists)')
   .requiredOption('-i, --intent <text>', 'Pre-declared intent statement')
-  .option('-d, --work-domain <type>', 'Work domain (internal_task|external_transaction|decision|retrospective)', 'internal_task')
+  .addOption(new Option('-d, --work-domain <type>', 'Work domain').choices(['internal_task', 'external_transaction', 'decision', 'retrospective']).default('internal_task'))
   .option('-t, --tool-called <name>', 'Tool or service identifier (e.g. coding_session)')
   .action((opts) => {
     const store = new IediStore();
@@ -119,7 +119,7 @@ program
   .option('--record-id <id>', 'Target a specific record by ID')
   .requiredOption('--delta <text>', 'Natural-language diff between intent and what actually happened')
   .option('--insight <text>', 'Retrospective insight for future improvement')
-  .option('--status <status>', 'Completion status (completed|failed)', 'completed')
+  .addOption(new Option('--status <status>', 'Completion status').choices(['completed', 'failed']).default('completed'))
   .action((opts) => {
     if (!opts.last && !opts.recordId) {
       console.error('Error: specify --last or --record-id <id>');
@@ -176,9 +176,14 @@ program
   .action((opts) => {
     const store = new IediStore();
     try {
+      const parsedLimit = parseInt(opts.limit as string, 10);
+      if (isNaN(parsedLimit) || parsedLimit < 1) {
+        console.error('Error: --limit must be a positive integer');
+        process.exit(1);
+      }
       const records = store.listRecords({
         work_domain: opts.workDomain as WorkDomain | undefined,
-        limit: parseInt(opts.limit as string, 10),
+        limit: parsedLimit,
       });
 
       if (opts.json) {

@@ -14,7 +14,7 @@ function iedi(args: string, env: NodeJS.ProcessEnv): string {
   });
 }
 
-describe('CLI happy path: start → evidence add → close → query', () => {
+describe.sequential('CLI happy path: start → evidence add → close → query', () => {
   let tmpDir: string;
   let env: NodeJS.ProcessEnv;
 

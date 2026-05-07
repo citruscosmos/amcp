@@ -115,12 +115,12 @@ function initDb(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS records (
       record_id                  TEXT PRIMARY KEY,
       schema_version             TEXT NOT NULL,
-      work_domain                TEXT NOT NULL,
+      work_domain                TEXT NOT NULL CHECK(work_domain IN ('external_transaction','internal_task','decision','retrospective')),
       tool_called                TEXT,
       requester_actor_id         TEXT NOT NULL,
       provider_actor_id          TEXT NOT NULL,
-      mode_used                  TEXT NOT NULL,
-      status                     TEXT NOT NULL,
+      mode_used                  TEXT NOT NULL CHECK(mode_used IN ('autonomous','cooperative','delegated')),
+      status                     TEXT NOT NULL CHECK(status IN ('open','completed','failed','cancelled')),
       intent                     TEXT NOT NULL,
       evidence                   TEXT NOT NULL,
       delta                      TEXT,
@@ -130,7 +130,10 @@ function initDb(db: Database.Database): void {
       record_hash                TEXT,
       created_at                 TEXT NOT NULL,
       closed_at                  TEXT
-    )
+    );
+    CREATE INDEX IF NOT EXISTS idx_records_status     ON records (status);
+    CREATE INDEX IF NOT EXISTS idx_records_closed_at  ON records (closed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_records_created_at ON records (created_at DESC);
   `);
 }
 
@@ -222,150 +225,156 @@ export class IediStore {
   // ---- write operations --------------------------------------------------
 
   openRecord(params: OpenRecordParams): IediRecord {
-    const existing = this.db
-      .prepare(`SELECT record_id FROM records WHERE status = 'open' LIMIT 1`)
-      .get() as { record_id: string } | undefined;
+    return this.db.transaction((): IediRecord => {
+      const existing = this.db
+        .prepare(`SELECT record_id FROM records WHERE status = 'open' LIMIT 1`)
+        .get() as { record_id: string } | undefined;
 
-    if (existing) {
-      throw new Error(
-        `Open record already exists (${existing.record_id}). Run 'iedi close --last' first.`,
-      );
-    }
+      if (existing) {
+        throw new Error(
+          `Open record already exists (${existing.record_id}). Run 'iedi close --last' first.`,
+        );
+      }
 
-    const lastClosed = this.db
-      .prepare(
-        `SELECT record_hash FROM records WHERE record_hash IS NOT NULL ORDER BY closed_at DESC LIMIT 1`,
-      )
-      .get() as { record_hash: string } | undefined;
+      const lastClosed = this.db
+        .prepare(
+          `SELECT record_hash FROM records WHERE record_hash IS NOT NULL ORDER BY closed_at DESC, record_id DESC LIMIT 1`,
+        )
+        .get() as { record_hash: string } | undefined;
 
-    const prevHash = lastClosed?.record_hash ?? null;
-    const workDomain: WorkDomain = params.work_domain ?? 'internal_task';
-    const modeUsed: ModeUsed =
-      workDomain === 'decision' ? 'cooperative' : (params.mode_used ?? 'cooperative');
+      const prevHash = lastClosed?.record_hash ?? null;
+      const workDomain: WorkDomain = params.work_domain ?? 'internal_task';
+      const modeUsed: ModeUsed =
+        workDomain === 'decision' ? 'cooperative' : (params.mode_used ?? 'cooperative');
 
-    const record: IediRecord = {
-      record_id: ulid(),
-      schema_version: SCHEMA_VERSION,
-      work_domain: workDomain,
-      tool_called: params.tool_called ?? null,
-      requester_actor_id: this._actorId,
-      provider_actor_id: this._actorId,
-      mode_used: modeUsed,
-      status: 'open',
-      intent: params.intent,
-      evidence: [],
-      delta: null,
-      insight: null,
-      requester_prev_record_hash: prevHash,
-      provider_prev_record_hash: prevHash,
-      record_hash: null,
-      created_at: new Date().toISOString(),
-      closed_at: null,
-    };
-
-    this.db
-      .prepare(
-        `INSERT INTO records (
-          record_id, schema_version, work_domain, tool_called,
-          requester_actor_id, provider_actor_id, mode_used, status,
-          intent, evidence, delta, insight,
-          requester_prev_record_hash, provider_prev_record_hash,
-          record_hash, created_at, closed_at
-        ) VALUES (
-          @record_id, @schema_version, @work_domain, @tool_called,
-          @requester_actor_id, @provider_actor_id, @mode_used, @status,
-          @intent, @evidence, @delta, @insight,
-          @requester_prev_record_hash, @provider_prev_record_hash,
-          @record_hash, @created_at, @closed_at
-        )`,
-      )
-      .run({
-        ...record,
-        evidence: JSON.stringify(record.evidence),
+      const record: IediRecord = {
+        record_id: ulid(),
+        schema_version: SCHEMA_VERSION,
+        work_domain: workDomain,
+        tool_called: params.tool_called ?? null,
+        requester_actor_id: this._actorId,
+        provider_actor_id: this._actorId,
+        mode_used: modeUsed,
+        status: 'open',
+        intent: params.intent,
+        evidence: [],
+        delta: null,
         insight: null,
-      });
+        requester_prev_record_hash: prevHash,
+        provider_prev_record_hash: prevHash,
+        record_hash: null,
+        created_at: new Date().toISOString(),
+        closed_at: null,
+      };
 
-    return record;
+      this.db
+        .prepare(
+          `INSERT INTO records (
+            record_id, schema_version, work_domain, tool_called,
+            requester_actor_id, provider_actor_id, mode_used, status,
+            intent, evidence, delta, insight,
+            requester_prev_record_hash, provider_prev_record_hash,
+            record_hash, created_at, closed_at
+          ) VALUES (
+            @record_id, @schema_version, @work_domain, @tool_called,
+            @requester_actor_id, @provider_actor_id, @mode_used, @status,
+            @intent, @evidence, @delta, @insight,
+            @requester_prev_record_hash, @provider_prev_record_hash,
+            @record_hash, @created_at, @closed_at
+          )`,
+        )
+        .run({
+          ...record,
+          evidence: JSON.stringify(record.evidence),
+          insight: null,
+        });
+
+      return record;
+    })();
   }
 
   appendEvidence(recordId: string, item: Omit<Evidence, 'timestamp'>): IediRecord {
-    const row = this.db
-      .prepare(`SELECT * FROM records WHERE record_id = ?`)
-      .get(recordId) as Record<string, unknown> | undefined;
+    return this.db.transaction((): IediRecord => {
+      const row = this.db
+        .prepare(`SELECT * FROM records WHERE record_id = ?`)
+        .get(recordId) as Record<string, unknown> | undefined;
 
-    if (!row) throw new Error(`Record not found: ${recordId}`);
+      if (!row) throw new Error(`Record not found: ${recordId}`);
 
-    const record = rowToRecord(row);
-    if (record.status !== 'open') {
-      throw new Error(`Record ${recordId} is not open (status: ${record.status})`);
-    }
+      const record = rowToRecord(row);
+      if (record.status !== 'open') {
+        throw new Error(`Record ${recordId} is not open (status: ${record.status})`);
+      }
 
-    const newItem: Evidence = {
-      timestamp: new Date().toISOString(),
-      content: item.content,
-      source: item.source,
-    };
-    const updatedEvidence = [...record.evidence, newItem];
+      const newItem: Evidence = {
+        timestamp: new Date().toISOString(),
+        content: item.content,
+        source: item.source,
+      };
+      const updatedEvidence = [...record.evidence, newItem];
 
-    this.db
-      .prepare(`UPDATE records SET evidence = ? WHERE record_id = ?`)
-      .run(JSON.stringify(updatedEvidence), recordId);
+      this.db
+        .prepare(`UPDATE records SET evidence = ? WHERE record_id = ?`)
+        .run(JSON.stringify(updatedEvidence), recordId);
 
-    return { ...record, evidence: updatedEvidence };
+      return { ...record, evidence: updatedEvidence };
+    })();
   }
 
   closeRecord(params: CloseRecordParams): IediRecord {
-    const row = this.db
-      .prepare(`SELECT * FROM records WHERE record_id = ?`)
-      .get(params.record_id) as Record<string, unknown> | undefined;
+    return this.db.transaction((): IediRecord => {
+      const row = this.db
+        .prepare(`SELECT * FROM records WHERE record_id = ?`)
+        .get(params.record_id) as Record<string, unknown> | undefined;
 
-    if (!row) throw new Error(`Record not found: ${params.record_id}`);
+      if (!row) throw new Error(`Record not found: ${params.record_id}`);
 
-    const record = rowToRecord(row);
-    if (record.status !== 'open') {
-      throw new Error(
-        `Record ${params.record_id} is already closed (status: ${record.status})`,
-      );
-    }
+      const record = rowToRecord(row);
+      if (record.status !== 'open') {
+        throw new Error(
+          `Record ${params.record_id} is already closed (status: ${record.status})`,
+        );
+      }
 
-    const closedAt = new Date().toISOString();
-    const insight: Insight | null = params.insight
-      ? { requester: null, provider: params.insight }
-      : null;
-    const status: Status = params.status ?? 'completed';
+      const closedAt = new Date().toISOString();
+      const insight: Insight | null = params.insight
+        ? { requester: null, provider: params.insight }
+        : null;
+      const status: Status = params.status ?? 'completed';
 
-    const updated: IediRecord = {
-      ...record,
-      delta: params.delta,
-      insight,
-      status,
-      closed_at: closedAt,
-      record_hash: null,
-    };
-
-    const hash = computeHash(updated);
-    updated.record_hash = hash;
-
-    this.db
-      .prepare(
-        `UPDATE records SET
-          delta      = @delta,
-          insight    = @insight,
-          status     = @status,
-          closed_at  = @closed_at,
-          record_hash = @record_hash
-        WHERE record_id = @record_id`,
-      )
-      .run({
+      const updated: IediRecord = {
+        ...record,
         delta: params.delta,
-        insight: insight ? JSON.stringify(insight) : null,
+        insight,
         status,
         closed_at: closedAt,
-        record_hash: hash,
-        record_id: params.record_id,
-      });
+        record_hash: null,
+      };
 
-    return updated;
+      const hash = computeHash(updated);
+      updated.record_hash = hash;
+
+      this.db
+        .prepare(
+          `UPDATE records SET
+            delta      = @delta,
+            insight    = @insight,
+            status     = @status,
+            closed_at  = @closed_at,
+            record_hash = @record_hash
+          WHERE record_id = @record_id`,
+        )
+        .run({
+          delta: params.delta,
+          insight: insight ? JSON.stringify(insight) : null,
+          status,
+          closed_at: closedAt,
+          record_hash: hash,
+          record_id: params.record_id,
+        });
+
+      return updated;
+    })();
   }
 
   // ---- read operations ---------------------------------------------------
@@ -393,7 +402,7 @@ export class IediStore {
       params.push(filters.work_domain);
     }
 
-    query += ` ORDER BY created_at DESC`;
+    query += ` ORDER BY record_id DESC`;
 
     if (filters?.limit) {
       query += ` LIMIT ?`;

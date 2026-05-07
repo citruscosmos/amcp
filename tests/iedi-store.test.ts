@@ -111,4 +111,26 @@ describe('IediStore', () => {
     });
     expect(r.mode_used).toBe('cooperative');
   });
+
+  // ---- negative paths -----------------------------------------------------
+
+  it('appendEvidence throws when record_id does not exist', () => {
+    expect(() =>
+      store.appendEvidence('NONEXISTENT_ID', { content: 'x', source: 'test' }),
+    ).toThrow(/Record not found/);
+  });
+
+  it('appendEvidence throws when record is already closed', () => {
+    const r = store.openRecord({ intent: 'will be closed' });
+    store.closeRecord({ record_id: r.record_id, delta: 'done' });
+    expect(() =>
+      store.appendEvidence(r.record_id, { content: 'too late', source: 'test' }),
+    ).toThrow(/not open/);
+  });
+
+  it('closeRecord throws when record does not exist', () => {
+    expect(() =>
+      store.closeRecord({ record_id: 'NONEXISTENT_ID', delta: 'done' }),
+    ).toThrow(/Record not found/);
+  });
 });
