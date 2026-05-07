@@ -3,6 +3,11 @@ import { Command, Option } from 'commander';
 import { IediStore } from '../storage/iedi-store.js';
 import type { WorkDomain } from '../storage/iedi-store.js';
 
+// Prevent ugly EPIPE stack trace when output is piped (e.g. iedi query --json | head)
+process.stdout.on('error', (err) => {
+  if ((err as NodeJS.ErrnoException).code === 'EPIPE') process.exit(0);
+});
+
 // ---- stdin helper --------------------------------------------------------
 
 async function readStdin(): Promise<string> {
