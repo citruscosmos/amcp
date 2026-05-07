@@ -396,13 +396,50 @@ record_start({tool_called, intent, ...}) 呼び出し
 
 ---
 
-## Next Steps
+## Next Steps（/plan-eng-review 後に更新）
 
-1. `spec/iedi-record-v0.2.json` — `work_domain` 追加・`delta: string` 型変更・`provider_actor_id` の内部利用慣例を含む v0.2 JSON Schema 定義
-2. `src/storage/iedi-store.ts` — IEDIレコードの SQLite CRUD + ハッシュチェーン（`record_hash` 計算 = JCS正規化 + SHA-256）  
-   `src/storage/skill-cache-store.ts` — `skill_performance_cache` の別テーブル CRUD（IEDI レコードとは独立）
-3. `src/cli/iedi.ts` — `start` / `close` / `query` コマンド実装
-4. `tests/` — 基本 CRUD + ハッシュチェーン連結のユニットテスト
+### プロジェクトセットアップ（ゼロステップ）
+- `package.json` — `name: "iedi"`, `bin: { "iedi": "dist/cli/iedi.js" }`, scripts: `dev` (tsx), `build` (tsc), `test` (vitest)
+- `tsconfig.json` — `target: ES2022`, `module: NodeNext`, `strict: true`
+- 依存関係: `better-sqlite3`, `commander`, `ulid`, `json-canonicalize`
+- devDep: `tsx`, `typescript`, `@types/better-sqlite3`, `vitest`
+
+### ステップ 1: `spec/iedi-record-v0.2.json`
+- `work_domain` 追加（external_transaction|internal_task|decision|retrospective）
+- `delta: string`（型変更）
+- `evidence: [{timestamp, content, source}]`（MCPEvent互換形式）
+- `requester_prev_record_hash` / `provider_prev_record_hash: null`（内部利用）
+- `"schemaVersion": "0.2-draft"` を明示
+- `provider_actor_id = requester_actor_id`（内部利用慣例）
+
+### ステップ 2: `src/storage/iedi-store.ts`
+- `openRecord()` — INSERT status='open', prev_hash = last closed record の record_hash
+- `appendEvidence()` — validate status='open', evidence[] に APPEND
+- `closeRecord()` — validate status='open' (2回close防止), computeHash(), UPDATE
+- `computeHash()` — record_hash フィールドを除外して JCS正規化 + SHA-256
+- `getLastOpenRecord()` — --last フラグ用
+- `listRecords()` — フィルタ付きクエリ
+- ~~`skill-cache-store.ts`~~ — 削除（TODOS.md T-1 後で検討）
+
+**制約: 同時に open レコードは 1 件のみ。2 件目の `openRecord()` は既存の open があればエラー。**
+
+### ステップ 3: `src/cli/iedi.ts`
+- `iedi start --intent "..." [--work-domain <type>] [--tool-called <name>]`
+  - 初回: `~/.iedi/config.json` に actor_id (ULID) 生成・保存、`~/.iedi/records.db` 初期化
+  - 既存 open レコードがあればエラー（"Run 'iedi close --last' first"）
+- `iedi evidence add [--last | --record-id <id>] [--text "..." | stdin]`
+- `iedi close [--last | --record-id <id>] --delta "..." [--insight "..."]`
+- `iedi query [--work-domain <type>]`
+
+### ステップ 4: `tests/`
+- `tests/iedi-store.test.ts` — 以下の必須ケースを含む:
+  - ✅ double-close はエラーを投げる
+  - ✅ computeHash は record_hash フィールドを除外する
+  - ✅ prev_record_hash=null の最初のレコードのチェーンが安定する
+  - ✅ JCS + 日本語テキストの SQLite往復後もハッシュが安定する
+  - ✅ 2件目のレコードの prev_hash === 1件目の record_hash
+  - ✅ 同時に2件目の start を試みるとエラー
+- `tests/cli.test.ts` — start→evidence add→close の happy path
 5. 実際の Claude Code セッションで使い始め、Delta 自然言語フィールドの粒度・書き方を経験的に調整する
 6. 安定したら `spec/amcp-tools-v0.2.yaml` + AMCPサーバー本体（Approach B）へ進む。その時点で `spec/iedi-record-v0.2.json` が外部取引にも使われる形になる。ホワイトペーパー v0.2 は実装検証後に発行する。
 
@@ -414,3 +451,18 @@ record_start({tool_called, intent, ...}) 呼び出し
 - **「先行技術として確立する」という表現を使っている。** 仕様文書の公開日をもってprior artとする設計は、特許戦略を意識した動き。技術仕様と法的保護を同時に考えているのが読み取れる。
 - **「AMCはAMCPを話す法人」という表現を使っている。** 技術プロトコルと経済単位を「同一概念の異なる抽象層」と名付けたのはフレーミングの精度が高い。これは「まず作って後から意味を見出す」人の言葉ではなく、設計から思想が先にある人の言葉。
 - **IEDIの「Delta はスコアではない」主張を、A2A・ERC-8004と比較して先に封じている。** 競合プロトコルへの反論を仕様書内で展開しているのは珍しい。防衛的でなく、先手を打つ姿勢。
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | スコープ・戦略 | 1 | issues_open (2026-05-04) | 4 critical gaps (A2A対応等) |
+| Eng Review | `/plan-eng-review` | アーキテクチャ・テスト（必須） | 1 | **CLEAR (PLAN)** | 10 issues → 全解決, 4 critical tests追加 |
+| Design Review | `/plan-design-review` | UI/UXギャップ | 0 | — | CLI/プロトコル実装のため不要 |
+| DX Review | `/plan-devex-review` | 開発体験 | 0 | — | — |
+| Outside Voice | (Claude subagent) | 独立した第二意見 | 1 | CLEAR | 6指摘→全解決（並行open禁止・Unicode・カラム名） |
+
+- **UNRESOLVED:** 0
+- **VERDICT:** ENG CLEARED — 実装を開始できます。
