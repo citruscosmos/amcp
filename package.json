@@ -1,0 +1,28 @@
+{
+  "name": "iedi",
+  "version": "0.1.0",
+  "description": "IEDI record logger for AMCP Approach A (internal solo logger)",
+  "type": "module",
+  "bin": {
+    "iedi": "dist/cli/iedi.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/iedi.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "commander": "^12.1.0",
+    "json-canonicalize": "^1.0.6",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^20.17.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
