@@ -195,7 +195,8 @@ program
   .option('--last', 'Target the current open record')
   .option('--record-id <id>', 'Target a specific record by ID')
   .requiredOption('--delta <text>', 'Natural-language diff between intent and what actually happened')
-  .option('--insight <text>', 'Retrospective insight for future improvement')
+  .option('--insight-provider <text>', 'Retrospective insight (model perspective, 4-section format)')
+  .option('--insight-requester <text>', 'Retrospective insight (user perspective)')
   .addOption(new Option('--status <status>', 'Completion status').choices(['completed', 'failed']).default('completed'))
   .action((opts) => {
     if (!opts.last && !opts.recordId) {
@@ -220,7 +221,8 @@ program
       const record = store.closeRecord({
         record_id: recordId,
         delta: opts.delta as string,
-        insight: opts.insight as string | undefined,
+        insight_provider: opts.insightProvider as string | undefined,
+        insight_requester: opts.insightRequester as string | undefined,
         status: opts.status as 'completed' | 'failed',
       });
 
@@ -228,7 +230,10 @@ program
       console.log(`  status:  ${record.status}`);
       console.log(`  delta:   ${record.delta}`);
       if (record.insight?.provider) {
-        console.log(`  insight: ${record.insight.provider}`);
+        console.log(`  insight (provider):   ${record.insight.provider}`);
+      }
+      if (record.insight?.requester) {
+        console.log(`  insight (requester):  ${record.insight.requester}`);
       }
       console.log(`  hash:    ${record.record_hash}`);
       if (record.requester_prev_record_hash) {

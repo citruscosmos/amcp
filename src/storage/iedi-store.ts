@@ -59,7 +59,8 @@ export interface OpenRecordParams {
 export interface CloseRecordParams {
   record_id: string;
   delta: string;
-  insight?: string;
+  insight_provider?: string;
+  insight_requester?: string;
   status?: 'completed' | 'failed';
 }
 
@@ -337,9 +338,10 @@ export class IediStore {
       }
 
       const closedAt = new Date().toISOString();
-      const insight: Insight | null = params.insight
-        ? { requester: null, provider: params.insight }
-        : null;
+      const insight: Insight | null =
+        params.insight_provider || params.insight_requester
+          ? { requester: params.insight_requester ?? null, provider: params.insight_provider ?? null }
+          : null;
       const status: Status = params.status ?? 'completed';
 
       const updated: IediRecord = {

@@ -67,7 +67,7 @@ describe.sequential('CLI happy path: start → evidence add → close → query'
 
   it('close persists delta and insight, outputs hash', () => {
     const out = iedi(
-      `close --last --delta "テスト範囲が想定より広く、統合テストを追加した" --insight "次回は事前にインターフェースを確認する"`,
+      `close --last --delta "テスト範囲が想定より広く、統合テストを追加した" --insight-provider "次回は事前にインターフェースを確認する"`,
       env,
     );
     expect(out).toMatch(/Record closed:/);

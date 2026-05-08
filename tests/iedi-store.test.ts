@@ -62,7 +62,7 @@ describe('IediStore', () => {
     store.closeRecord({
       record_id: r.record_id,
       delta: 'Δelta with ñ and 中文',
-      insight: '次回の改善点: インターフェースを先に確認する',
+      insight_provider: '次回の改善点: インターフェースを先に確認する',
     });
     const closed = store.getRecord(r.record_id)!;
 
@@ -184,5 +184,36 @@ describe('IediStore', () => {
     expect(closed.status).toBe('failed');
     const retrieved = store.getRecord(r.record_id)!;
     expect(retrieved.status).toBe('failed');
+  });
+
+  // ---- dual insight fields ------------------------------------------------
+
+  it('insight_requester only → provider=null, requester=value', () => {
+    const r = store.openRecord({ intent: 'test' });
+    store.closeRecord({ record_id: r.record_id, delta: 'd', insight_requester: '総評' });
+    const closed = store.getRecord(r.record_id)!;
+    expect(closed.insight).toEqual({ provider: null, requester: '総評' });
+    expect(closed.record_hash).toBeTruthy();
+  });
+
+  it('insight_provider + insight_requester both set', () => {
+    const r = store.openRecord({ intent: 'test' });
+    store.closeRecord({
+      record_id: r.record_id,
+      delta: 'd',
+      insight_provider: 'モデル視点',
+      insight_requester: 'ユーザー視点',
+    });
+    const closed = store.getRecord(r.record_id)!;
+    expect(closed.insight).toEqual({ provider: 'モデル視点', requester: 'ユーザー視点' });
+    expect(computeHash(closed)).toBe(closed.record_hash);
+  });
+
+  it('insight_requester change causes hash change (chain integrity)', () => {
+    const r = store.openRecord({ intent: 'test' });
+    store.closeRecord({ record_id: r.record_id, delta: 'd', insight_requester: 'A' });
+    const closed = store.getRecord(r.record_id)!;
+    const hashWithB = computeHash({ ...closed, insight: { provider: null, requester: 'B' } });
+    expect(hashWithB).not.toBe(closed.record_hash);
   });
 });

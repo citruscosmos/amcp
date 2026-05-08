@@ -45,3 +45,19 @@
 **Context:** `package.json` に `"bin": { "iedi": "dist/cli/iedi.js" }` は設定済み。GitHub Actions で `npm publish` するか、`bun build --compile` で single binary を Releases にアップロードする2択が有力。better-sqlite3 の native addon バンドルは bun compile では未検証。
 
 **Depends on:** Approach A 安定稼働確認後。T-1 (DB マイグレーション) と同時に検討推奨。
+
+---
+
+## T-4: `iedi close` の `--insight-provider` / `--insight-requester` フラグの CLI 統合テスト
+
+**What:** `src/cli/iedi.ts` の `iedi close --insight-provider "..." --insight-requester "..."` を実際の CLI 呼び出しレベルでテストする統合テストを追加する。
+
+**Why:** 現状のテストはストアレイヤー（`IediStore.closeRecord()`）のユニットテストのみ。Commander.js の option parsing → store 呼び出しのパス（`opts.insightProvider` / `opts.insightRequester` の変換）はテストされていない。フラグ名変更やオプション定義ミスがサイレントに素通りするリスクがある。
+
+**Pros:** CLI → store の結合経路全体をカバーできる。回帰防止として `--insight`（旧フラグ）が削除されていることも確認できる。
+
+**Cons:** `iedi.ts` が `process.exit()` を呼ぶため、CLI を直接 `child_process.execSync` で呼ぶかプロセス分離テストが必要になる。セットアップが少し複雑。
+
+**Context:** Vitest で `execa` や `child_process.execSync` を使い、テスト用の `:memory:` 相当の一時 DB パスを `IEDI_DB_PATH` 環境変数で注入するパターンが有力。
+
+**Depends on:** T-4 は `--insight-provider` / `--insight-requester` 実装完了後（現在の実装タスク完了後に着手可能）。
