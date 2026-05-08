@@ -5,9 +5,19 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 const ROOT = join(import.meta.dirname, '..');
+const CLI = join(ROOT, 'src/cli/iedi.ts');
 
 function iedi(args: string, env: NodeJS.ProcessEnv): string {
-  return execSync(`npx tsx ${join(ROOT, 'src/cli/iedi.ts')} ${args}`, {
+  return execSync(`npx tsx ${CLI} ${args}`, {
+    env,
+    encoding: 'utf-8',
+    cwd: ROOT,
+  });
+}
+
+function iediStdin(args: string, stdin: string, env: NodeJS.ProcessEnv): string {
+  return execSync(`npx tsx ${CLI} ${args}`, {
+    input: stdin,
     env,
     encoding: 'utf-8',
     cwd: ROOT,
@@ -89,5 +99,74 @@ describe.sequential('CLI happy path: start → evidence add → close → query'
     const [second, first] = records;
     expect(second['requester_prev_record_hash']).toBe(first['record_hash']);
     expect(second['provider_prev_record_hash']).toBe(first['record_hash']);
+  });
+});
+
+describe.sequential('CLI additional coverage: --record-id, --status failed, icons, stdin', () => {
+  let tmpDir: string;
+  let env: NodeJS.ProcessEnv;
+  let recordId: string;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'iedi-cli-extra-'));
+    env = {
+      ...process.env,
+      IEDI_DB_PATH: join(tmpDir, 'records.db'),
+      IEDI_ACTOR_ID: 'CLI_EXTRA_ACTOR_00000000000000000',
+    };
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('query on empty DB shows "No records found."', () => {
+    const out = iedi('query', env);
+    expect(out).toContain('No records found.');
+  });
+
+  it('start with --tool-called stores tool name in output', () => {
+    const out = iedi(`start --intent "use a tool" --tool-called coding_session`, env);
+    expect(out).toMatch(/Record started:/);
+    const match = out.match(/Record started:\s+(\S+)/);
+    recordId = match?.[1] ?? '';
+    expect(recordId).toBeTruthy();
+  });
+
+  it('query shows [*] icon for open record', () => {
+    const out = iedi('query', env);
+    expect(out).toContain('[*]');
+  });
+
+  it('evidence add via --record-id appends to a specific record', () => {
+    const out = iedi(`evidence add --record-id ${recordId} --text "found a bug"`, env);
+    expect(out).toMatch(/Evidence added/);
+    expect(out).toContain('1 item');
+  });
+
+  it('evidence add via stdin appends content from stdin', () => {
+    const out = iediStdin(`evidence add --record-id ${recordId}`, 'stdin content here', env);
+    expect(out).toMatch(/Evidence added/);
+    expect(out).toContain('2 item');
+  });
+
+  it('close with --record-id and --status failed marks record as failed', () => {
+    const out = iedi(
+      `close --record-id ${recordId} --delta "did not complete" --status failed`,
+      env,
+    );
+    expect(out).toContain('failed');
+    expect(out).toMatch(/hash:\s+[0-9a-f]{64}/);
+  });
+
+  it('query shows [x] icon for failed record', () => {
+    const out = iedi('query', env);
+    expect(out).toContain('[x]');
+  });
+
+  it('tool_called is persisted and visible in --json output', () => {
+    const out = iedi('query --json', env);
+    const records = JSON.parse(out) as Record<string, unknown>[];
+    expect(records[0]['tool_called']).toBe('coding_session');
   });
 });

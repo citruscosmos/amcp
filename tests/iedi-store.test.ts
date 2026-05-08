@@ -133,4 +133,56 @@ describe('IediStore', () => {
       store.closeRecord({ record_id: 'NONEXISTENT_ID', delta: 'done' }),
     ).toThrow(/Record not found/);
   });
+
+  // ---- tool_called field --------------------------------------------------
+
+  it('tool_called is stored and retrieved when provided', () => {
+    const r = store.openRecord({ intent: 'use a tool', tool_called: 'coding_session' });
+    expect(r.tool_called).toBe('coding_session');
+    store.closeRecord({ record_id: r.record_id, delta: 'done' });
+    const closed = store.getRecord(r.record_id)!;
+    expect(closed.tool_called).toBe('coding_session');
+  });
+
+  // ---- getRecord ----------------------------------------------------------
+
+  it('getRecord returns null for a non-existent ID', () => {
+    expect(store.getRecord('NONEXISTENT_ID')).toBeNull();
+  });
+
+  // ---- listRecords --------------------------------------------------------
+
+  it('listRecords returns empty array when no records exist', () => {
+    expect(store.listRecords()).toHaveLength(0);
+  });
+
+  it('listRecords filters by work_domain', () => {
+    const r1 = store.openRecord({ intent: 'task', work_domain: 'internal_task' });
+    store.closeRecord({ record_id: r1.record_id, delta: 'done' });
+    const r2 = store.openRecord({ intent: 'decide', work_domain: 'decision' });
+    store.closeRecord({ record_id: r2.record_id, delta: 'decided' });
+
+    const tasks = store.listRecords({ work_domain: 'internal_task' });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].work_domain).toBe('internal_task');
+  });
+
+  it('listRecords respects limit', () => {
+    for (let i = 0; i < 3; i++) {
+      const r = store.openRecord({ intent: `item ${i}` });
+      store.closeRecord({ record_id: r.record_id, delta: 'done' });
+    }
+    const limited = store.listRecords({ limit: 2 });
+    expect(limited).toHaveLength(2);
+  });
+
+  // ---- failed status ------------------------------------------------------
+
+  it('closeRecord with status=failed sets status correctly', () => {
+    const r = store.openRecord({ intent: 'risky operation' });
+    const closed = store.closeRecord({ record_id: r.record_id, delta: 'failed halfway', status: 'failed' });
+    expect(closed.status).toBe('failed');
+    const retrieved = store.getRecord(r.record_id)!;
+    expect(retrieved.status).toBe('failed');
+  });
 });
