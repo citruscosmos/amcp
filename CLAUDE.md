@@ -15,6 +15,9 @@ MCP に準拠したプロファイル。
 - Architecture              → /plan-eng-review
 - Code review/diff          → /review
 - Ship/deploy/PR            → /ship
+- IEDIセッション開始        → /iedi-start
+- IEDIセッション終了        → /iedi-end
+- IEDI知識ドキュメント生成  → /iedi-digest
 
 ## 注意
 - /plan-design-review は本プロジェクトでは使用しない
