@@ -9,12 +9,10 @@ description: "セッションを終了してIEDIレコードを閉じる。Evide
 
 ## IEDI パス設定
 
-各ステップで bash コマンドを実行する前に、以下の関数で `IEDI_DIR` を取得する。
-`.git` と同様にカレントディレクトリから上方向に `.iedi/` を探索する。
+各ステップで bash コマンドを実行する前に、環境変数 `IEDI_WORKSPACE` から `IEDI_DIR` を設定する（`/iedi-setup` で設定済みであること）。
 
 ```bash
-find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
-IEDI_DIR=$(find_iedi_dir)
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 ```
 
 ## Instructions
@@ -118,8 +116,7 @@ Delta 候補:
 
 ユーザーの修正を反映した最終テキストを保存する。まず保存先パスを確認:
 ```bash
-find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
-IEDI_DIR=$(find_iedi_dir)
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 mkdir -p "$IEDI_DIR/sessions"
 echo "$IEDI_DIR/sessions/provider-insight.md"
 ```
@@ -141,8 +138,7 @@ echo "$IEDI_DIR/sessions/provider-insight.md"
 
 確定した Delta テキストを保存する。まず保存先パスを確認:
 ```bash
-find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
-IEDI_DIR=$(find_iedi_dir)
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 mkdir -p "$IEDI_DIR/sessions"
 echo "$IEDI_DIR/sessions/delta.txt"
 ```
@@ -151,8 +147,7 @@ echo "$IEDI_DIR/sessions/delta.txt"
 
 次のコマンドを実行する:
 ```bash
-find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
-IEDI_DIR=$(find_iedi_dir)
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
 cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts close --last \
