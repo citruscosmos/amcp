@@ -17,6 +17,7 @@ MCP に準拠したプロファイル。
 - Ship/deploy/PR            → /ship
 - IEDIセッション開始        → /iedi-start
 - IEDIセッション終了        → /iedi-end
+- IEDI過去セッション記録    → /iedi-capture
 - IEDI知識ドキュメント生成  → /iedi-digest
 
 ## 注意
