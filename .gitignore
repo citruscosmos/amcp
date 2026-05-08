@@ -46,6 +46,9 @@ dist/
 .env.*
 !.env.example
 
+# IEDI local store
+.iedi/
+
 # Build / test artifacts
 coverage/
 .coverage

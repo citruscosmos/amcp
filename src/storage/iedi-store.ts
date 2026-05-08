@@ -73,14 +73,25 @@ export interface IediStoreOptions {
 
 const SCHEMA_VERSION = '0.2-draft';
 
+function findIediDir(start: string): string {
+  let dir = start;
+  while (true) {
+    if (existsSync(join(dir, '.iedi'))) return join(dir, '.iedi');
+    const parent = dirname(dir);
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
+  }
+  return join(start, '.iedi'); // not found — create at start
+}
+
 function defaultIediDir(): string {
   return process.env['IEDI_DB_PATH']
     ? dirname(process.env['IEDI_DB_PATH'])
-    : join(homedir(), '.iedi');
+    : findIediDir(process.cwd());
 }
 
 function defaultDbPath(): string {
-  return process.env['IEDI_DB_PATH'] ?? join(homedir(), '.iedi', 'records.db');
+  return process.env['IEDI_DB_PATH'] ?? join(defaultIediDir(), 'records.db');
 }
 
 function configPath(iediDir: string): string {

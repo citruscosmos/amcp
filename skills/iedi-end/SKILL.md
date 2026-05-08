@@ -7,6 +7,16 @@ description: "セッションを終了してIEDIレコードを閉じる。Evide
 
 現在のセッションを振り返り、open IEDIレコードに Evidence・Delta・Provider/Requester Insight を記録して閉じる。
 
+## IEDI パス設定
+
+各ステップで bash コマンドを実行する前に、以下の関数で `IEDI_DIR` を取得する。
+`.git` と同様にカレントディレクトリから上方向に `.iedi/` を探索する。
+
+```bash
+find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
+IEDI_DIR=$(find_iedi_dir)
+```
+
 ## Instructions
 
 ### Step 1: open レコードの確認
@@ -106,10 +116,15 @@ Delta 候補:
 生成後に内容を表示し、ユーザーに確認する:
 > Provider Insight を表示しました。追加・修正があれば教えてください。問題なければ「OK」で続けます。
 
-ユーザーの修正を反映した最終テキストを Write tool で保存する:
+ユーザーの修正を反映した最終テキストを保存する。まず保存先パスを確認:
+```bash
+find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
+IEDI_DIR=$(find_iedi_dir)
+mkdir -p "$IEDI_DIR/sessions"
+echo "$IEDI_DIR/sessions/provider-insight.md"
 ```
-C:/Users/citru/.iedi/sessions/provider-insight.md
-```
+
+出力されたパスに Write tool で保存する。
 
 ---
 
@@ -124,15 +139,22 @@ C:/Users/citru/.iedi/sessions/provider-insight.md
 
 ### Step 7: レコードのクローズ
 
-確定した Delta テキストを Write tool で保存する:
+確定した Delta テキストを保存する。まず保存先パスを確認:
+```bash
+find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
+IEDI_DIR=$(find_iedi_dir)
+mkdir -p "$IEDI_DIR/sessions"
+echo "$IEDI_DIR/sessions/delta.txt"
 ```
-C:/Users/citru/.iedi/sessions/delta.txt
-```
+
+出力されたパスに Write tool で Delta テキストを保存する。
 
 次のコマンドを実行する:
 ```bash
-DELTA=$(cat C:/Users/citru/.iedi/sessions/delta.txt)
-PROVIDER=$(cat C:/Users/citru/.iedi/sessions/provider-insight.md)
+find_iedi_dir() { local d=$PWD; while [ "$d" != "/" ]; do [ -d "$d/.iedi" ] && echo "$d/.iedi" && return; d=$(dirname "$d"); done; echo "$PWD/.iedi"; }
+IEDI_DIR=$(find_iedi_dir)
+DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
+PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
 cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts close --last \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
@@ -164,3 +186,5 @@ IEDIレコード閉鎖完了
 - いずれかのステップで失敗してもレコードは open のまま残る。スキルを再実行することで再試行できる。
 - Provider Insight は4セクション構造で保存すること。`/iedi-digest` がこの構造を前提にパターン抽出を行う。
 - Delta は「モデルが単独判断できなかった差分」に絞ること。ただの作業ログではない。
+- `iedi` CLI も walk-up 探索でワークスペースの `.iedi/` を自動発見する。
+  スキルと CLI が同じ DB・同じ sessions/ を参照するため整合性が保たれる。
