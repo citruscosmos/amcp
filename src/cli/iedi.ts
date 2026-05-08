@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
 import { Command, Option } from 'commander';
 import { IediStore } from '../storage/iedi-store.js';
 import type { WorkDomain } from '../storage/iedi-store.js';
@@ -107,6 +109,76 @@ evidenceCmd
 
       const record = store.appendEvidence(recordId, { content, source: opts.source as string });
       console.log(`Evidence added to ${record.record_id} (${record.evidence.length} item(s))`);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
+// ---- iedi evidence capture -----------------------------------------------
+
+evidenceCmd
+  .command('capture')
+  .description('Capture evidence from a session summary file or git diff')
+  .option('--last', 'Target the current open record')
+  .option('--record-id <id>', 'Target a specific record by ID')
+  .option('--session-summary <file>', 'Path to session summary markdown file to append as evidence')
+  .option('--git-diff', 'Capture git status + git diff HEAD as evidence')
+  .action((opts) => {
+    if (!opts.last && !opts.recordId) {
+      console.error('Error: specify --last or --record-id <id>');
+      process.exit(1);
+    }
+    if (!opts.sessionSummary && !opts.gitDiff) {
+      console.error('Error: specify --session-summary <file> or --git-diff');
+      process.exit(1);
+    }
+
+    const store = new IediStore();
+    try {
+      let recordId: string;
+      if (opts.last) {
+        const open = store.getOpenRecord();
+        if (!open) {
+          console.error('Error: no open record. Run "iedi start" first.');
+          process.exit(1);
+        }
+        recordId = open.record_id;
+      } else {
+        recordId = opts.recordId as string;
+      }
+
+      if (opts.sessionSummary) {
+        const content = readFileSync(opts.sessionSummary as string, 'utf-8');
+        store.appendEvidence(recordId, { content, source: 'session_summary' });
+        console.log(`Session summary captured for ${recordId}`);
+      }
+
+      if (opts.gitDiff) {
+        try {
+          const status = execSync('git status', {
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          // git diff HEAD fails when there are no commits; fall back to empty diff
+          let diff = '';
+          try {
+            diff = execSync('git diff HEAD', {
+              encoding: 'utf-8',
+              stdio: ['pipe', 'pipe', 'pipe'],
+            });
+          } catch { /* no commits yet — omit diff section */ }
+          const content =
+            `## git status\n\`\`\`\n${status.trim()}\n\`\`\`\n\n` +
+            `## git diff HEAD\n\`\`\`diff\n${diff.trim()}\n\`\`\``;
+          store.appendEvidence(recordId, { content, source: 'git_diff' });
+          console.log(`Git diff captured for ${recordId}`);
+        } catch {
+          console.log('Skipped: not a git repository or git is not available.');
+        }
+      }
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);

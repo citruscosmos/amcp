@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] — Phase 0: Evidence Auto-Capture
+
+### Added
+
+- `iedi evidence capture --session-summary <file>` — append a session summary markdown file as evidence
+- `iedi evidence capture --git-diff` — capture `git status` + `git diff HEAD` as evidence; gracefully skips in non-git directories and repos with no commits
+- `/log-iedi-session` skill (`~/.claude/skills/log-iedi-session/SKILL.md`) — slash command to summarize the current Claude Code session and save to `~/.iedi/sessions/{record_id}.md`
+- `~/.iedi/hooks/session-end.sh` — `SessionEnd` hook script that auto-captures session summary and git diff when a session ends
+- `~/.claude/settings.local.json` — registers `session-end.sh` as the `SessionEnd` hook
+- 7 new tests for evidence capture (39 total, all passing)
+
 ## [0.1.0] — 2026-05-08
 
 ### Added

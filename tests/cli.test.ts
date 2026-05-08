@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'child_process';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -21,6 +21,14 @@ function iediStdin(args: string, stdin: string, env: NodeJS.ProcessEnv): string 
     env,
     encoding: 'utf-8',
     cwd: ROOT,
+  });
+}
+
+function iediInDir(args: string, cwd: string, env: NodeJS.ProcessEnv): string {
+  return execSync(`npx tsx ${CLI} ${args}`, {
+    env,
+    encoding: 'utf-8',
+    cwd,
   });
 }
 
@@ -168,5 +176,74 @@ describe.sequential('CLI additional coverage: --record-id, --status failed, icon
     const out = iedi('query --json', env);
     const records = JSON.parse(out) as Record<string, unknown>[];
     expect(records[0]['tool_called']).toBe('coding_session');
+  });
+});
+
+describe.sequential('CLI evidence capture: session-summary, git-diff, graceful skip', () => {
+  let tmpDir: string;
+  let env: NodeJS.ProcessEnv;
+  let summaryFile: string;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'iedi-capture-test-'));
+    env = {
+      ...process.env,
+      IEDI_DB_PATH: join(tmpDir, 'records.db'),
+      IEDI_ACTOR_ID: 'CAPTURE_TEST_ACTOR_000000000000000',
+    };
+    summaryFile = join(tmpDir, 'session-summary.md');
+    writeFileSync(
+      summaryFile,
+      '# Session Summary\nrecord_id: test\n\n## What happened\nImplemented evidence capture.\n',
+      'utf-8',
+    );
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('start opens a record for capture tests', () => {
+    const out = iedi('start --intent "evidence capture test"', env);
+    expect(out).toMatch(/Record started:/);
+  });
+
+  it('evidence capture --session-summary appends file content as evidence', () => {
+    const out = iedi(`evidence capture --session-summary "${summaryFile}" --last`, env);
+    expect(out).toMatch(/Session summary captured for/);
+  });
+
+  it('evidence capture --git-diff captures from a git repository', () => {
+    // Create a temporary git repo to test the happy path
+    const gitDir = mkdtempSync(join(tmpdir(), 'iedi-git-'));
+    try {
+      execSync('git init', { cwd: gitDir, stdio: 'pipe' });
+      execSync('git config user.email "test@test.com"', { cwd: gitDir, stdio: 'pipe' });
+      execSync('git config user.name "Test"', { cwd: gitDir, stdio: 'pipe' });
+      const out = iediInDir('evidence capture --git-diff --last', gitDir, env);
+      expect(out).toMatch(/Git diff captured for/);
+    } finally {
+      rmSync(gitDir, { recursive: true, force: true });
+    }
+  });
+
+  it('evidence capture --git-diff gracefully skips in a non-git directory', () => {
+    const out = iediInDir('evidence capture --git-diff --last', tmpDir, env);
+    expect(out).toMatch(/Skipped:/);
+  });
+
+  it('evidence array has both captured items', () => {
+    const out = iedi('query --json --limit 1', env);
+    const records = JSON.parse(out) as Record<string, unknown>[];
+    const evidence = records[0]['evidence'] as unknown[];
+    expect(evidence.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('evidence capture with no source flag exits with error', () => {
+    expect(() => iedi('evidence capture --last', env)).toThrow();
+  });
+
+  it('evidence capture with no target flag exits with error', () => {
+    expect(() => iedi('evidence capture --git-diff', env)).toThrow();
   });
 });
