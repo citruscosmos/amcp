@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/citruscosmos/amcp/spec/iedi-record-v0.2.json",
+  "title": "IEDI Record v0.2-draft",
+  "description": "AMCP IEDI (Intent/Evidence/Delta/Insight) record schema. v0.2-draft adds work_domain and natural-language delta over v0.1.",
+  "type": "object",
+  "required": [
+    "record_id",
+    "schema_version",
+    "work_domain",
+    "requester_actor_id",
+    "provider_actor_id",
+    "mode_used",
+    "status",
+    "intent",
+    "evidence",
+    "requester_prev_record_hash",
+    "provider_prev_record_hash",
+    "created_at"
+  ],
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "description": "ULID identifier, monotonically increasing"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "0.2-draft"
+    },
+    "work_domain": {
+      "type": "string",
+      "enum": ["external_transaction", "internal_task", "decision", "retrospective"],
+      "description": "external_transaction: requester≠provider; internal_task/decision/retrospective: provider_actor_id=requester_actor_id"
+    },
+    "tool_called": {
+      "type": ["string", "null"],
+      "description": "Identifier for the tool or service invoked (e.g. coding_session, document_review)"
+    },
+    "requester_actor_id": {
+      "type": "string",
+      "description": "DID or local ULID of the requesting actor"
+    },
+    "provider_actor_id": {
+      "type": "string",
+      "description": "DID or local ULID of the providing actor. Equals requester_actor_id for internal use."
+    },
+    "mode_used": {
+      "type": "string",
+      "enum": ["autonomous", "cooperative", "delegated"],
+      "description": "Execution mode. decision work_domain caps at cooperative."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "completed", "failed", "cancelled"]
+    },
+    "intent": {
+      "type": "string",
+      "description": "Pre-declared intent statement written before execution begins. Load-bearing: Delta is meaningless without a prior Intent."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Ordered list of execution log entries, MCP-event compatible",
+      "items": {
+        "type": "object",
+        "required": ["timestamp", "content", "source"],
+        "properties": {
+          "timestamp": { "type": "string", "format": "date-time" },
+          "content": { "type": "string" },
+          "source": { "type": "string", "description": "Origin of this evidence entry (e.g. cli, mcp_event, manual)" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "delta": {
+      "type": ["string", "null"],
+      "description": "Natural-language description of the diff between Intent and Evidence. Null while status=open. Model determines structure and granularity."
+    },
+    "insight": {
+      "description": "Retrospective insights for future improvement. Null while status=open.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "requester": { "type": ["string", "null"] },
+            "provider": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "requester_prev_record_hash": {
+      "type": ["string", "null"],
+      "description": "SHA-256 of the previous closed record in the requester's chain. Null for the first record."
+    },
+    "provider_prev_record_hash": {
+      "type": ["string", "null"],
+      "description": "SHA-256 of the previous closed record in the provider's chain. Equals requester_prev_record_hash for internal use."
+    },
+    "record_hash": {
+      "type": ["string", "null"],
+      "description": "SHA-256 of this record via JCS (RFC 8785), excluding the record_hash field itself. Null while status=open."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the record was opened"
+    },
+    "closed_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the record was closed. Null while status=open."
+    }
+  },
+  "additionalProperties": false
+}

@@ -29,3 +29,19 @@
 **Context:** computeHash() が `iedi-store.ts` の内部関数としてエクスポートされていれば実装は 30 行程度。`iedi query` の拡張として追加できる。
 
 **Depends on:** iedi-store.ts (Step 2) + iedi.ts (Step 3) 完成後。
+
+---
+
+## T-3: npm publish / GitHub Release パイプライン
+
+**What:** `npm publish` または GitHub Release + binaries による `iedi` CLI の配布自動化。
+
+**Why:** 現状は `npx tsx src/cli/iedi.ts` または `tsc` ビルド後の `node dist/cli/iedi.js` でしか使えない。`npm install -g iedi` または `brew install` 相当のインストールパスがない。
+
+**Pros:** 一般ユーザーが `npm install -g iedi` または single binary で使えるようになる。AMCP Approach B へのステップアップが容易になる。
+
+**Cons:** npm registry への publish にはアカウント管理・semver 運用が必要。single binary（pkg / bun compile）は better-sqlite3 の native addon をバンドルする追加作業がある。
+
+**Context:** `package.json` に `"bin": { "iedi": "dist/cli/iedi.js" }` は設定済み。GitHub Actions で `npm publish` するか、`bun build --compile` で single binary を Releases にアップロードする2択が有力。better-sqlite3 の native addon バンドルは bun compile では未検証。
+
+**Depends on:** Approach A 安定稼働確認後。T-1 (DB マイグレーション) と同時に検討推奨。

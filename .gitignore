@@ -53,3 +53,4 @@ htmlcov/
 *.log
 tmp/
 temp/
+.gstack/
