@@ -1,143 +1,126 @@
 ---
 name: iedi-end
-description: "セッションを終了してIEDIレコードを閉じる。EvidenceとDeltaとInsightをコンテキストウィンドウから生成してiedi closeを実行する。"
+description: "End an IEDI session and close the record. Generate Evidence, Delta, and Provider/Requester Insight from the context window and run iedi close."
 ---
 
 # IEDI End
 
-現在のセッションを振り返り、open IEDIレコードに Evidence・Delta・Provider/Requester Insight を記録して閉じる。
+Reflect on the current session, record Evidence, Delta, and Provider/Requester Insight into the open IEDI record, then close it.
 
-## IEDI パス設定
+## Shell Constraint
 
-各ステップで bash コマンドを実行する前に、環境変数 `IEDI_WORKSPACE` から `IEDI_DIR` を設定する（`/iedi-setup` で設定済みであること）。
+All file operations must use Bash. Never use PowerShell for file reads/writes — its default UTF-16 LE encoding garbles Japanese text.
+
+## Shared Templates
+
+This skill uses templates defined in `~/.claude/skills/iedi-shared/SKILL.md`.
+**Before generating Evidence (Step 3), Delta (Step 4), or Provider Insight (Step 5):**
+Read `~/.claude/skills/iedi-shared/SKILL.md` with the Read tool and use the block templates, rules, and validation commands defined there.
+If the Read fails, fall back to the inline template descriptions in each step below.
+
+## IEDI_DIR Setup
+
+Before any bash command, set:
 
 ```bash
-IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}/.iedi"
 ```
 
 ## Instructions
 
-### Step 1: open レコードの確認
+### Step 1: Check for open record
 
-次のコマンドを実行する:
 ```bash
 iedi query --json --limit 5
 ```
 
-`"status": "open"` のレコードを探し、`record_id` と `intent` を保存する。
+Find the record with `"status": "open"` and save its `record_id` and `intent`.
 
-open レコードが見つからない場合:
+If no open record is found:
 > open IEDIレコードがありません。`/iedi-start` または `iedi open --intent "..."` でセッションを開始してください。
 
-と出力して停止する。
+Stop.
 
 ---
 
-### Step 2: セッション結果の1行サマリーを取得
+### Step 2: Get one-line session summary
 
-ユーザーに確認する:
+Ask the user:
 > このセッションの結果を一言でまとめてください（例: "借上社宅の業務執行決定書を作成した"）
 
-ユーザーの回答を `USER_SUMMARY` として保存する。
+Save the response as `USER_SUMMARY`.
 
 ---
 
-### Step 3: Evidence の生成と記録
+### Step 3: Generate and record Evidence
 
-現在の会話全体（セッション開始 or /iedi-start 以降）を振り返り、作業単位ごとに **Evidence Item ブロック** を生成する。
-自由文の要約ではなく、項目単位の自己完結ブロック（`### Evidence Item N`）として構造化する。
+Review the full conversation (from session start or `/iedi-start` onwards). Generate one `### Evidence Item N` block per independent unit of work.
 
-各ブロックには以下の4フィールドを含める（観察と評価を分離し、観察のみをEvidenceに記録する）:
+Use the Evidence Item template from `~/.claude/skills/iedi-shared/SKILL.md`.
+If the shared file is unavailable, use this template:
 
-| フィールド | 必須 | 説明 |
-|---|---|---|
-| Did | ✅ | 実施した作業内容（具体的なツール・コマンド・アプローチ） |
-| Result | ✅ | その結果（成功したこと・確認できた事実） |
-| Files | ✅ | 変更したファイルと変更内容の要約 |
-| Outcome | ✅ | 1行の検証可能な結果 |
-
-出力形式:
 ```markdown
 ### Evidence Item 1
-- **Did:** [実施した作業内容]
-- **Result:** [その結果]
-- **Files:** [変更ファイルと要約]
-- **Outcome:** [1行の検証可能な結果]
-
-### Evidence Item 2
-- **Did:** ...
-- **Result:** ...
-- **Files:** ...
-- **Outcome:** ...
+- **Did:** [action taken — specific tools, commands, approach]
+- **Result:** [outcome — what succeeded, what was confirmed]
+- **Files:** [files changed and summary of changes]
+- **Outcome:** [one-line verifiable result]
 ```
 
-ブロック数はセッション内の独立した作業単位の数に応じて変動する（通常 1〜5）。
-各ブロックが1つの RAFT 訓練サンプルの `answer` 候補になる。
+**Rules:**
+- Rejected/failed approaches go to Delta (Chosen/Rejected), not Evidence. Evidence is observation only.
+- Block count = number of independent work units (typically 1–5)
+- Each block is a self-contained RAFT training sample candidate
+- If context compression has occurred: "コンテキスト圧縮のため一部情報が欠落している可能性があります" (note at top)
 
-**Rejected/Failed は Evidence に含めない。** それらは評価（evaluation）であり観察（observation）ではない。不採用案や失敗アプローチは Step 4 の Delta（Chosen/Rejected）に寄せる。
+After finalizing the Evidence text, save it:
 
-**注意:** コンテキスト圧縮が進んでいる場合は Evidence の精度が低下する可能性がある。その場合は「コンテキスト圧縮のため一部情報が欠落している可能性があります」と注記して続行する。
-
-Evidence テキストを確定したら、まず保存先パスを確認する:
 ```bash
-IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 mkdir -p "$IEDI_DIR/sessions"
 echo "$IEDI_DIR/sessions/evidence.md"
 ```
 
-出力されたパスに Write tool で Evidence テキストを保存し、次のコマンドを実行する:
+Use the Write tool to save the Evidence text to the output path. Then run the encoding guard from `~/.claude/skills/iedi-shared/SKILL.md` (BOM check). After verification:
+
 ```bash
-IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 iedi add evidence --last \
   --source "session_end_summary" \
   --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
 
-CLI が非ゼロで終了した場合はエラーを表示して停止する。
+If the CLI exits non-zero, display the error and stop.
 
 ---
 
-### Step 4: Delta の生成と確定
+### Step 4: Generate and confirm Delta
 
-セッション中のユーザーの判断・選択を振り返り、判断単位ごとに **Decision ブロック** を生成する。
-箇条書きではなく、項目単位の自己完結ブロック（`### Decision N`）として構造化する。
+Review user decisions and choices made during the session. Generate one `### Decision N` block per decision where the model could not decide alone.
 
-**Delta** = モデルが単独で判断できなかった差分（ユーザーが向きを決めた事項）。
-  - モデルが複数案を提示してユーザーが選択した場面
-  - ユーザーがモデルの方向性を修正した場面
-  - ユーザーが文脈・制約・権限情報を提供した場面
-  - ユーザーが最終承認を行った場面
+**Delta** = the gap between what the model proposed and what the user chose:
+- User chose from multiple options the model presented
+- User corrected the model's direction
+- User provided context, constraints, or authorization information
+- User made a final approval with meaningful choice
 
-各ブロックには以下の3フィールドを含める:
+Use the Decision block template from `~/.claude/skills/iedi-shared/SKILL.md`.
+If the shared file is unavailable, use this template:
 
-| フィールド | 必須 | 説明 |
-|---|---|---|
-| Chosen | ✅ | 採用した判断 |
-| Rejected | ✅ | 却下した代替案（該当なければ「（なし — 代替案の検討なし）」） |
-| Reason | ✅ | 採用理由（なぜ Chosen が Rejected より優れているか） |
-
-出力形式:
 ```markdown
 ### Decision 1
-- **Chosen:** [採用した判断]
-- **Rejected:** [却下した代替案]
-- **Reason:** [採用理由]
-
-### Decision 2
-- **Chosen:** [採用した判断]
-- **Rejected:** [却下した代替案]
-- **Reason:** [採用理由]
+- **Chosen:** [decision adopted]
+- **Rejected:** [alternative rejected, or "(none — no alternatives considered)"]
+- **Reason:** [why Chosen was better than Rejected]
 ```
 
-各 `### Decision N` ブロックが1つの DPO preference pair（RI perspective）になる。
-Rejected が「（なし — 代替案の検討なし）」のブロックは DPO に適さないが、記録としてブロック自体は生成する。
+**Rules:**
+- Only include decisions where user explicitly chose between alternatives
+- "OK" confirmations are not decisions (they are approvals)
+- Decisions without rejected alternatives → record in Provider Insight interventions instead (Step 5)
+- Each `### Decision N` block is one DPO preference pair (RI perspective)
 
-**却下した代替案が存在しない判断について:**
-セッションによっては「却下した代替案」が存在しない判断がある（例: 「deprecated エイリアスを残す」は当然の判断で代替案の検討がなかった）。
-その判断は Delta に含めず、Step 5 の Provider Insight の介入ポイントにのみ記録する。
-この運用ルールにより、DPO に適さない空の Rejected フィールドを減らす。
-
-判断候補を番号付きリストで提示する:
+Present candidates as a numbered list:
 ```
 Delta 候補:
 1. [Chosen] / [Rejected] / [Reason]
@@ -147,144 +130,111 @@ Delta 候補:
 削除する番号、追加・修正があれば教えてください。問題なければ「OK」で確定します。
 ```
 
-ユーザーの回答を待ち、最終的な Delta テキストを確定する。
+Wait for the user's response, then finalize the Delta text.
 
 ---
 
-### Step 5: Provider Insight の生成と確認
+### Step 5: Generate and confirm Provider Insight
 
-以下の4セクション構成で Provider Insight を生成する。
-セッションの実際の介入箇所を根拠にして、具体的に記述すること。
+Generate Provider Insight using the 4-section structure from `~/.claude/skills/iedi-shared/SKILL.md`.
+Base every intervention on actual session events — do not fabricate.
 
-介入ポイントは箇条書きではなく、項目単位の自己完結ブロック（`### Intervention N`）として構造化する。
-各ブロックには以下の4フィールドを含める:
+If the shared file is unavailable, use this structure:
 
-| フィールド | 必須 | 説明 |
-|---|---|---|
-| Description | ✅ | 介入が発生した判断内容 |
-| Verdict | ✅ | `used`（ユーザー判断を採用）または `rejected`（モデル提案を優先） |
-| Confidence | ✅ | ±0.1/0.3/0.5 の数値（ルーブリック準拠） |
-| Reason | ✅ | モデルが単独判断できなかった理由 |
-
-confidence_delta の目安（スタータールーブリック）:
-| 値 | 意味 | 例 |
-|---|---|---|
-| +0.1 | 微修正で済んだ | 表現の調整、ファイル名の修正 |
-| +0.3 | モデルの方向性を修正した | アプローチの選択、設計判断 |
-| +0.5 | モデルが確実に誤っていた | 誤った前提の訂正、根本的な方向転換 |
-| -0.1 | ユーザー判断がモデル提案より劣る可能性 | モデル案を却下したが後で必要になった |
-
-出力形式:
+**Intervention blocks** (`### Intervention N`):
 ```markdown
-## 介入ポイント
-
 ### Intervention 1
-- **Description:** [介入が発生した判断内容]
-- **Verdict:** [used または rejected]
-- **Confidence:** [+0.1 / +0.3 / +0.5 / -0.1]
-- **Reason:** [モデルが単独判断できなかった理由]
-
-### Intervention 2
-- **Description:** [介入が発生した判断内容]
-- **Verdict:** [used または rejected]
-- **Confidence:** [数値]
-- **Reason:** [理由]
-
-## 自律実行に必要だったもの
-- **ドメイン知識:** [判断に必要だった専門知識・規程・慣例]
-- **権限・ポリシー:** [誰がどの範囲で決定できるかのルール]
-- **外部データ・コンテキスト:** [参照が必要だったリソース・情報]
-（該当しないセクションは省略可）
-
-## 次回の自動化可能性
-- [学習・ルール化すれば次回以降に不要になる介入]
-- [テンプレート化・事前定義で対応できる判断]
-
-## 本質的な人間判断（自動化不可）
-- [最終意思決定・倫理的判断・ステークホルダー調整など]
+- **Description:** [what decision required intervention]
+- **Verdict:** [used | rejected]
+- **Confidence:** [+0.1 | +0.3 | +0.5 | -0.1]
+- **Reason:** [why model could not decide alone]
 ```
 
-各 `### Intervention N` ブロックが1つの ROZA evidence edge に対応する。
-4セクション構造は `/iedi-digest` の後方互換性のため維持する。
+Confidence rubric: +0.1 = minor fix (wording), +0.3 = approach correction, +0.5 = model was fundamentally wrong, -0.1 = user choice may be worse than model proposal.
 
-数値は主観値。50レコード蓄積時点で分布を確認し、キャリブレーションを行うこと。
+**4 sections:**
+1. `## 介入ポイント` — `### Intervention N` blocks
+2. `## 自律実行に必要だったもの` — domain knowledge, authority/policy, external data
+3. `## 次回の自動化可能性` — interventions learnable/rule-able for future sessions
+4. `## 本質的な人間判断（自動化不可）` — final decisions, ethics, stakeholder coordination
 
-生成後に内容を表示し、ユーザーに確認する:
+Confidence values are subjective. Recalibrate after 50 records.
+
+Show the generated content and ask:
 > Provider Insight を表示しました。追加・修正があれば教えてください。問題なければ「OK」で続けます。
 
-ユーザーの修正を反映した最終テキストを保存する。まず保存先パスを確認:
+Apply user corrections, then save:
+
 ```bash
-IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 mkdir -p "$IEDI_DIR/sessions"
 echo "$IEDI_DIR/sessions/provider-insight.md"
 ```
 
-出力されたパスに Write tool で保存する。
+Use the Write tool to save to the output path. Run the encoding guard.
 
 ---
 
-### Step 5.5: テンプレート検証
+### Step 5.5: Template validation
 
-LLM 生成テキストはテンプレートから逸脱する可能性があるため、生成後に軽量な構造検証を行う。
+Run the validation grep commands from `~/.claude/skills/iedi-shared/SKILL.md`.
 
-Evidence・Delta・Provider Insight をファイルに保存した後、以下の grep チェックを実行する:
+If the shared file is unavailable:
 
 ```bash
-IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 EVIDENCE_FILE="$IEDI_DIR/sessions/evidence.md"
 DELTA_FILE="$IEDI_DIR/sessions/delta.txt"
 PROVIDER_FILE="$IEDI_DIR/sessions/provider-insight.md"
 
-# Evidence: ブロックの存在確認
+# Evidence: block presence
 grep -q '^### Evidence Item [0-9]\+$' "$EVIDENCE_FILE" || echo "MISSING: Evidence Item blocks"
 
-# Delta: ブロックの存在確認 + 必須フィールド
+# Delta: block presence + required fields
 grep -q '^### Decision [0-9]\+$' "$DELTA_FILE" || echo "MISSING: Decision blocks"
 grep -q '^- \*\*Chosen:\*\*' "$DELTA_FILE" || echo "MISSING: Chosen field"
 grep -q '^- \*\*Rejected:\*\*' "$DELTA_FILE" || echo "MISSING: Rejected field"
 grep -q '^- \*\*Reason:\*\*' "$DELTA_FILE" || echo "MISSING: Reason field"
 
-# Provider Insight: セクション構造 + ブロック内フィールド
+# Provider Insight: block structure + required fields
 grep -q '^### Intervention [0-9]\+$' "$PROVIDER_FILE" || echo "MISSING: Intervention blocks"
 grep -q '^- \*\*Verdict:\*\*' "$PROVIDER_FILE" || echo "MISSING: Verdict field"
 grep -q '^- \*\*Confidence:\*\*' "$PROVIDER_FILE" || echo "MISSING: Confidence field"
 ```
 
-検証に失敗した場合（`MISSING:` が出力された場合）:
-1. 欠落しているフィールド/ブロックを具体的に指摘する
-2. 該当ステップに戻り、欠落セクションを明示的に指示して再生成する
-3. 最大2回まで再試行する
-
-2回失敗した場合は:
-> テンプレート検証に失敗しました。手動で修正してください。
-
-と表示し、生成テキストをそのまま提示して続行する。
+**If validation fails** (`MISSING:` output appears):
+1. Note the specific missing fields/blocks
+2. Return to the generation step with explicit instructions: "Include these missing fields: {MISSING output}"
+3. Regenerate, maximum 2 retries
+4. If 2 retries fail: display "テンプレート検証に失敗しました。手動で修正してください。" and continue with the generated text as-is
 
 ---
 
-### Step 6: Requester Insight の入力
+### Step 6: Requester Insight input
 
-ユーザーに確認する:
+Ask the user:
 > このセッションの総評・気づきを自由に記録してください（スキップする場合は「スキップ」と入力）
 
-ユーザーの回答を `REQUESTER_INSIGHT` として保存する。スキップの場合は空文字列とする。
+Save the response as `REQUESTER_INSIGHT`. If the user skips, leave it empty.
 
 ---
 
-### Step 7: レコードのクローズ
+### Step 7: Close the record
 
-確定した Delta テキストを保存する。まず保存先パスを確認:
+Save the finalized Delta text:
+
 ```bash
-IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 mkdir -p "$IEDI_DIR/sessions"
 echo "$IEDI_DIR/sessions/delta.txt"
 ```
 
-出力されたパスに Write tool で Delta テキストを保存する。
+Use the Write tool to save the Delta text to the output path. Run the encoding guard.
 
-次のコマンドを実行する（Evidence は Step 3 で、Provider Insight は Step 5 で、Delta は上記でファイル保存済み）:
+Run the close command (Evidence was added in Step 3, Provider Insight saved in Step 5, Delta saved above):
+
 ```bash
-IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
 iedi close --last \
@@ -292,19 +242,20 @@ iedi close --last \
   --insight-provider "$PROVIDER"
 ```
 
-`REQUESTER_INSIGHT` が空でない場合は末尾に `--insight-requester "$(cat "$IEDI_DIR/sessions/requester-insight.txt")"` を追加する（事前に Write tool で同ファイルに保存しておく）。
+If `REQUESTER_INSIGHT` is not empty: first save it via Write tool to `$IEDI_DIR/sessions/requester-insight.txt`, run the encoding guard, then append `--insight-requester "$(cat "$IEDI_DIR/sessions/requester-insight.txt")"` to the close command.
 
-**CLI 引数長の注意:** Windows のコマンドライン長制限（cmd.exe: ~8191 chars）により、`--delta` または `--insight-provider` の値が長大な場合に `$(cat ...)` による展開が失敗する可能性がある。その場合は以下を試す:
-1. 最初に `--delta` のみで `iedi close --last --delta "$(cat "$IEDI_DIR/sessions/delta.txt")"` を実行し、Provider Insight を後から `iedi update` で追加する（`iedi update` コマンドが存在する場合）
-2. または、Delta のブロック数を減らして再生成する（Step 4 に戻る）
+**Windows CLI length limit:** cmd.exe limits command lines to ~8191 chars. If `$(cat ...)` expansion of `--delta` or `--insight-provider` fails due to length:
+1. Try: `iedi close --last --delta "$(cat "$IEDI_DIR/sessions/delta.txt")"` first (without Provider Insight)
+2. Then add Provider Insight via `iedi update` if available
+3. Or: return to Step 4 and reduce the Delta block count
 
-CLI が非ゼロで終了した場合はエラーを表示して停止する（レコードは open のまま残る — 再実行で再試行可能）。
+If the CLI exits non-zero, display the error and stop (the record remains open — re-running is safe).
 
 ---
 
-### Step 8: 完了報告
+### Step 8: Completion report
 
-CLI の出力から `record_id` と `hash` を取得し、次の形式で報告する:
+Extract `record_id` and `hash` from the CLI output, then report:
 
 ```
 IEDIレコード閉鎖完了
@@ -319,11 +270,11 @@ IEDIレコード閉鎖完了
 
 ## Notes
 
-- いずれかのステップで失敗してもレコードは open のまま残る。スキルを再実行することで再試行できる。
-- Provider Insight は4セクション構造で保存すること。`/iedi-digest` がこの構造を前提にパターン抽出を行う。
-- Delta は「モデルが単独判断できなかった差分」に絞ること。ただの作業ログではない。
-- Evidence は `### Evidence Item N`、Delta は `### Decision N`、Provider Insight の介入ポイントは `### Intervention N` の自己完結ブロックで構造化する。各ブロックが RAFT/DPO/ROZA の訓練データ単位になる。
-- Step 5.5 の grep 検証は、LLM 生成テキストのテンプレート逸脱を検出するための軽量チェックである。検証失敗時は最大2回まで再生成を試みる。
-- 長大テキストは CLI 引数として直接渡さず、`$IEDI_DIR/sessions/` に一時ファイルとして保存し `$(cat <file>)` で渡す。Windows のコマンドライン長制限（~8191 chars）に注意。
-- `iedi` CLI は `IEDI_WORKSPACE` 環境変数で `.iedi/` の場所を決定する。
-  スキルと CLI が同じ DB・同じ sessions/ を参照するため整合性が保たれる。
+- If any step fails, the record remains open. Re-run the skill to retry.
+- Provider Insight must use the 4-section structure — `/iedi-digest` depends on this format for pattern extraction.
+- Delta must be limited to "decisions the model could not make alone." It is not a work log.
+- Evidence uses `### Evidence Item N` blocks, Delta uses `### Decision N` blocks, Provider Insight interventions use `### Intervention N` blocks. Each block is a self-contained training data unit (RAFT/DPO/ROZA).
+- Step 5.5 grep validation is a lightweight check for LLM template drift. On failure, retry generation up to 2 times.
+- Long text must not be passed directly as CLI arguments. Save to `$IEDI_DIR/sessions/` and use `$(cat <file>)`. Watch the Windows command-line length limit (~8191 chars).
+- The `iedi` CLI uses `IEDI_WORKSPACE` env var to locate `.iedi/`. Skill and CLI reference the same DB.
+- Use Bash for all file operations. Never use PowerShell.
