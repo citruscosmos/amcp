@@ -1,11 +1,11 @@
 ---
 name: iedi-start
-description: "IEDIセッションを開始する。ワークスペースの.iedi/digest/からカテゴリを選択してintentを確定し、iedi startを実行する。"
+description: "IEDIセッションを開始する。ワークスペースの.iedi/digest/からカテゴリを選択してintentを確定し、iedi openを実行する。"
 ---
 
 # IEDI Start
 
-IEDIレコードを開始する。過去のダイジェストからカテゴリを選択し、intent を確定して `iedi start` を実行する。
+IEDIレコードを開始する。過去のダイジェストからカテゴリを選択し、intent を確定して `iedi open` を実行する。
 
 ## IEDI パス設定
 
@@ -104,11 +104,11 @@ Intent パターン例（{category}）:
 
 ---
 
-### Step 7: iedi start の実行
+### Step 7: iedi open の実行
 
 次のコマンドを実行する:
 ```bash
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts start \
+iedi open \
   --intent "<INTENT>" \
   --work-domain <WORK_DOMAIN>
 ```
@@ -146,9 +146,9 @@ IEDIセッション開始
 ## Notes
 
 - このスキルは intent 宣言のみを行う。Evidence・Delta・Insight の生成は `/iedi-end` が担当する。
-- open レコードがすでに存在する場合、`iedi start` はエラーで失敗する（仕様通り）。
+- open レコードがすでに存在する場合、`iedi open` はエラーで失敗する（仕様通り）。
   その場合は `iedi query` で open レコードを確認し、`/iedi-end` で閉じてから再実行すること。
 - `/iedi-digest` が未実行でもフリーテキスト intent で開始できる。カテゴリなしでも問題ない。
 - work_domain は後から変更できない。迷った場合は `internal_task` で開始してよい。
-- `iedi` CLI 自体も walk-up 探索でワークスペースの `.iedi/` を見つける。
-  スキルと CLI が同じ DB を参照するため、どのサブディレクトリで実行しても一致する。
+- `iedi` CLI は `IEDI_WORKSPACE` 環境変数で `.iedi/` の場所を決定する。
+  スキルと CLI が同じ DB を参照するため、必ず一致する。

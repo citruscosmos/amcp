@@ -32,7 +32,7 @@ function iediInDir(args: string, cwd: string, env: NodeJS.ProcessEnv): string {
   });
 }
 
-describe.sequential('CLI happy path: start → evidence add → close → query', () => {
+describe.sequential('CLI happy path: open → add evidence → close → query', () => {
   let tmpDir: string;
   let env: NodeJS.ProcessEnv;
 
@@ -49,18 +49,18 @@ describe.sequential('CLI happy path: start → evidence add → close → query'
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('start outputs a record ID', () => {
-    const out = iedi(`start --intent "テストを書く" --work-domain internal_task`, env);
-    expect(out).toMatch(/Record started:/);
+  it('open outputs a record ID', () => {
+    const out = iedi(`open --intent "テストを書く" --work-domain internal_task`, env);
+    expect(out).toMatch(/Record opened:/);
     expect(out).toContain('テストを書く');
   });
 
-  it('second start fails with an open record already exists error', () => {
-    expect(() => iedi(`start --intent "second"`, env)).toThrow();
+  it('second open fails with an open record already exists error', () => {
+    expect(() => iedi(`open --intent "second"`, env)).toThrow();
   });
 
-  it('evidence add appends an entry', () => {
-    const out = iedi(`evidence add --last --text "vitest を導入した"`, env);
+  it('add evidence appends an entry', () => {
+    const out = iedi(`add evidence --last --text "vitest を導入した"`, env);
     expect(out).toMatch(/Evidence added/);
     expect(out).toContain('1 item');
   });
@@ -96,7 +96,7 @@ describe.sequential('CLI happy path: start → evidence add → close → query'
 
   it('hash chain: prev_record_hash of 2nd record equals record_hash of 1st', () => {
     // Open and close a second record
-    iedi(`start --intent "2件目のタスク"`, env);
+    iedi(`open --intent "2件目のタスク"`, env);
     iedi(`close --last --delta "完了した"`, env);
 
     const out = iedi(`query --json`, env);
@@ -133,10 +133,10 @@ describe.sequential('CLI additional coverage: --record-id, --status failed, icon
     expect(out).toContain('No records found.');
   });
 
-  it('start with --tool-called stores tool name in output', () => {
-    const out = iedi(`start --intent "use a tool" --tool-called coding_session`, env);
-    expect(out).toMatch(/Record started:/);
-    const match = out.match(/Record started:\s+(\S+)/);
+  it('open with --tool-called stores tool name in output', () => {
+    const out = iedi(`open --intent "use a tool" --tool-called coding_session`, env);
+    expect(out).toMatch(/Record opened:/);
+    const match = out.match(/Record opened:\s+(\S+)/);
     recordId = match?.[1] ?? '';
     expect(recordId).toBeTruthy();
   });
@@ -146,14 +146,14 @@ describe.sequential('CLI additional coverage: --record-id, --status failed, icon
     expect(out).toContain('[*]');
   });
 
-  it('evidence add via --record-id appends to a specific record', () => {
-    const out = iedi(`evidence add --record-id ${recordId} --text "found a bug"`, env);
+  it('add evidence via --record-id appends to a specific record', () => {
+    const out = iedi(`add evidence --record-id ${recordId} --text "found a bug"`, env);
     expect(out).toMatch(/Evidence added/);
     expect(out).toContain('1 item');
   });
 
-  it('evidence add via stdin appends content from stdin', () => {
-    const out = iediStdin(`evidence add --record-id ${recordId}`, 'stdin content here', env);
+  it('add evidence via stdin appends content from stdin', () => {
+    const out = iediStdin(`add evidence --record-id ${recordId}`, 'stdin content here', env);
     expect(out).toMatch(/Evidence added/);
     expect(out).toContain('2 item');
   });
@@ -179,7 +179,7 @@ describe.sequential('CLI additional coverage: --record-id, --status failed, icon
   });
 });
 
-describe.sequential('CLI evidence capture: session-summary, git-diff, graceful skip', () => {
+describe.sequential('CLI add evidence: session-summary, git-diff, graceful skip', () => {
   let tmpDir: string;
   let env: NodeJS.ProcessEnv;
   let summaryFile: string;
@@ -203,47 +203,96 @@ describe.sequential('CLI evidence capture: session-summary, git-diff, graceful s
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('start opens a record for capture tests', () => {
-    const out = iedi('start --intent "evidence capture test"', env);
-    expect(out).toMatch(/Record started:/);
+  it('open starts a record for add evidence tests', () => {
+    const out = iedi('open --intent "add evidence test"', env);
+    expect(out).toMatch(/Record opened:/);
   });
 
-  it('evidence capture --session-summary appends file content as evidence', () => {
-    const out = iedi(`evidence capture --session-summary "${summaryFile}" --last`, env);
-    expect(out).toMatch(/Session summary captured for/);
+  it('add evidence --session-summary appends file content as evidence', () => {
+    const out = iedi(`add evidence --session-summary "${summaryFile}" --last`, env);
+    expect(out).toMatch(/Evidence added/);
   });
 
-  it('evidence capture --git-diff captures from a git repository', () => {
+  it('add evidence --git-diff captures from a git repository', () => {
     // Create a temporary git repo to test the happy path
     const gitDir = mkdtempSync(join(tmpdir(), 'iedi-git-'));
     try {
       execSync('git init', { cwd: gitDir, stdio: 'pipe' });
       execSync('git config user.email "test@test.com"', { cwd: gitDir, stdio: 'pipe' });
       execSync('git config user.name "Test"', { cwd: gitDir, stdio: 'pipe' });
-      const out = iediInDir('evidence capture --git-diff --last', gitDir, env);
-      expect(out).toMatch(/Git diff captured for/);
+      const out = iediInDir('add evidence --git-diff --last', gitDir, env);
+      expect(out).toMatch(/Evidence added/);
     } finally {
       rmSync(gitDir, { recursive: true, force: true });
     }
   });
 
-  it('evidence capture --git-diff gracefully skips in a non-git directory', () => {
-    const out = iediInDir('evidence capture --git-diff --last', tmpDir, env);
+  it('add evidence --git-diff gracefully skips in a non-git directory', () => {
+    const out = iediInDir('add evidence --git-diff --last', tmpDir, env);
     expect(out).toMatch(/Skipped:/);
   });
 
-  it('evidence array has both captured items', () => {
+  it('add evidence with no content option reads from stdin in non-TTY', () => {
+    const out = iediStdin(`add evidence --last`, 'stdin fallback content', env);
+    expect(out).toMatch(/Evidence added/);
+  });
+
+  it('evidence array has captured items', () => {
     const out = iedi('query --json --limit 1', env);
     const records = JSON.parse(out) as Record<string, unknown>[];
     const evidence = records[0]['evidence'] as unknown[];
-    expect(evidence.length).toBeGreaterThanOrEqual(2);
+    expect(evidence.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('evidence capture with no source flag exits with error', () => {
-    expect(() => iedi('evidence capture --last', env)).toThrow();
+  it('add evidence with no target flag exits with error', () => {
+    expect(() => iedi('add evidence --git-diff', env)).toThrow();
+  });
+});
+
+describe.sequential('CLI deprecated commands: start, evidence add, evidence capture', () => {
+  let tmpDir: string;
+  let env: NodeJS.ProcessEnv;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'iedi-deprecated-'));
+    env = {
+      ...process.env,
+      IEDI_DB_PATH: join(tmpDir, 'records.db'),
+      IEDI_ACTOR_ID: 'DEPRECATED_TEST_ACTOR_0000000000',
+    };
   });
 
-  it('evidence capture with no target flag exits with error', () => {
-    expect(() => iedi('evidence capture --git-diff', env)).toThrow();
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('iedi start prints deprecation error and references iedi open', () => {
+    expect(() => iedi('start --intent "test"', env)).toThrow();
+    try {
+      iedi('start --intent "test"', env);
+    } catch (e) {
+      const msg = (e as { stdout?: string; stderr?: string }).stderr ?? String(e);
+      expect(msg).toMatch(/deprecated.*iedi open/i);
+    }
+  });
+
+  it('iedi evidence add prints deprecation error', () => {
+    expect(() => iedi('evidence add --last --text "test"', env)).toThrow();
+    try {
+      iedi('evidence add --last --text "test"', env);
+    } catch (e) {
+      const msg = (e as { stdout?: string; stderr?: string }).stderr ?? String(e);
+      expect(msg).toMatch(/deprecated.*iedi add evidence/i);
+    }
+  });
+
+  it('iedi evidence capture prints deprecation error', () => {
+    expect(() => iedi('evidence capture --last --git-diff', env)).toThrow();
+    try {
+      iedi('evidence capture --last --git-diff', env);
+    } catch (e) {
+      const msg = (e as { stdout?: string; stderr?: string }).stderr ?? String(e);
+      expect(msg).toMatch(/deprecated.*iedi add evidence/i);
+    }
   });
 });

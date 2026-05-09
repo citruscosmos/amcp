@@ -21,13 +21,13 @@ IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 
 次のコマンドを実行する:
 ```bash
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts query --json --limit 5
+iedi query --json --limit 5
 ```
 
 `"status": "open"` のレコードを探し、`record_id` と `intent` を保存する。
 
 open レコードが見つからない場合:
-> open IEDIレコードがありません。`/iedi-start` または `iedi start --intent "..."` でセッションを開始してください。
+> open IEDIレコードがありません。`/iedi-start` または `iedi open --intent "..."` でセッションを開始してください。
 
 と出力して停止する。
 
@@ -52,7 +52,7 @@ open レコードが見つからない場合:
 
 Evidence テキストを確定したら実行する:
 ```bash
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts evidence add --last \
+iedi add evidence --last \
   --source "session_end_summary" \
   --text "<EVIDENCE_TEXT>"
 ```
@@ -150,7 +150,7 @@ echo "$IEDI_DIR/sessions/delta.txt"
 IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts close --last \
+iedi close --last \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```
@@ -181,5 +181,5 @@ IEDIレコード閉鎖完了
 - いずれかのステップで失敗してもレコードは open のまま残る。スキルを再実行することで再試行できる。
 - Provider Insight は4セクション構造で保存すること。`/iedi-digest` がこの構造を前提にパターン抽出を行う。
 - Delta は「モデルが単独判断できなかった差分」に絞ること。ただの作業ログではない。
-- `iedi` CLI も walk-up 探索でワークスペースの `.iedi/` を自動発見する。
+- `iedi` CLI は `IEDI_WORKSPACE` 環境変数で `.iedi/` の場所を決定する。
   スキルと CLI が同じ DB・同じ sessions/ を参照するため整合性が保たれる。

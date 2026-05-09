@@ -20,6 +20,38 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf-8').trim();
 }
 
+// ---- early validation ----------------------------------------------------
+
+function checkWorkspace(): void {
+  if (!process.env['IEDI_WORKSPACE'] && !process.env['IEDI_DB_PATH']) {
+    console.error('Error: IEDI_WORKSPACE is not set. Please define the IEDI_WORKSPACE environment variable.');
+    process.exit(1);
+  }
+}
+
+// ---- record resolution helper --------------------------------------------
+
+function resolveRecordId(store: IediStore, opts: { last?: boolean; recordId?: string }): string {
+  if (opts.last) {
+    const open = store.getOpenRecord();
+    if (!open) {
+      console.error('Error: no open record. Run "iedi open" first.');
+      process.exit(1);
+    }
+    return open.record_id;
+  }
+  return opts.recordId as string;
+}
+
+// ---- evidence source resolution -------------------------------------------
+
+function resolveSource(opts: { source?: string; sessionSummary?: unknown; gitDiff?: unknown }): string {
+  if (opts.source) return opts.source as string;
+  if (opts.sessionSummary) return 'session_summary';
+  if (opts.gitDiff) return 'git_diff';
+  return 'cli';
+}
+
 // ---- CLI -----------------------------------------------------------------
 
 const program = new Command();
@@ -29,27 +61,31 @@ program
   .description('IEDI record logger — AMCP Approach A (internal solo logger)')
   .version('0.1.0');
 
-// ---- iedi start ----------------------------------------------------------
+// ---- iedi open -----------------------------------------------------------
 
 program
-  .command('start')
+  .command('open')
   .description('Open a new IEDI record (errors if an open record already exists)')
   .requiredOption('-i, --intent <text>', 'Pre-declared intent statement')
   .addOption(new Option('-d, --work-domain <type>', 'Work domain').choices(['internal_task', 'external_transaction', 'decision', 'retrospective']).default('internal_task'))
   .option('-t, --tool-called <name>', 'Tool or service identifier (e.g. coding_session)')
   .action((opts) => {
+    checkWorkspace();
     const store = new IediStore();
     try {
       if (store.isNewActor) {
+        const iediDir = process.env['IEDI_DB_PATH']
+          ? process.env['IEDI_DB_PATH'].replace(/[/\\][^/\\]+$/, '') // dirname
+          : `${process.env['IEDI_WORKSPACE']}/.iedi`;
         console.log(`First run — actor ID created: ${store.actorId}`);
-        console.log(`Config: ~/.iedi/config.json  DB: ~/.iedi/records.db\n`);
+        console.log(`Config: ${iediDir}/config.json  DB: ${iediDir}/records.db\n`);
       }
       const record = store.openRecord({
         intent: opts.intent as string,
         work_domain: opts.workDomain as WorkDomain,
         tool_called: opts.toolCalled as string | undefined,
       });
-      console.log(`Record started: ${record.record_id}`);
+      console.log(`Record opened: ${record.record_id}`);
       console.log(`  work_domain: ${record.work_domain}`);
       console.log(`  mode:        ${record.mode_used}`);
       console.log(`  intent:      ${record.intent}`);
@@ -61,99 +97,49 @@ program
     }
   });
 
-// ---- iedi evidence -------------------------------------------------------
+// ---- iedi add ------------------------------------------------------------
 
-const evidenceCmd = program
-  .command('evidence')
-  .description('Manage evidence for an open record');
-
-evidenceCmd
+const addCmd = program
   .command('add')
-  .description('Append an evidence entry to an open record (--last or --record-id required)')
+  .description('Append items to an IEDI record');
+
+addCmd
+  .command('evidence')
+  .description('Append an evidence entry to a record (--last or --record-id required)')
   .option('--last', 'Target the current open record')
   .option('--record-id <id>', 'Target a specific record by ID')
-  .option('--text <text>', 'Evidence content (omit to read from stdin)')
-  .option('--source <source>', 'Evidence source label', 'cli')
-  .action(async (opts) => {
-    if (!opts.last && !opts.recordId) {
-      console.error('Error: specify --last or --record-id <id>');
-      process.exit(1);
-    }
-
-    const store = new IediStore();
-    try {
-      let recordId: string;
-      if (opts.last) {
-        const open = store.getOpenRecord();
-        if (!open) {
-          console.error('Error: no open record. Run "iedi start" first.');
-          process.exit(1);
-        }
-        recordId = open.record_id;
-      } else {
-        recordId = opts.recordId as string;
-      }
-
-      let content = opts.text as string | undefined;
-      if (!content) {
-        if (process.stdin.isTTY) {
-          console.error('Error: no text provided. Use --text or pipe content via stdin.');
-          process.exit(1);
-        }
-        content = await readStdin();
-        if (!content) {
-          console.error('Error: stdin was empty.');
-          process.exit(1);
-        }
-      }
-
-      const record = store.appendEvidence(recordId, { content, source: opts.source as string });
-      console.log(`Evidence added to ${record.record_id} (${record.evidence.length} item(s))`);
-    } catch (err) {
-      console.error(`Error: ${(err as Error).message}`);
-      process.exit(1);
-    } finally {
-      store.close();
-    }
-  });
-
-// ---- iedi evidence capture -----------------------------------------------
-
-evidenceCmd
-  .command('capture')
-  .description('Capture evidence from a session summary file or git diff')
-  .option('--last', 'Target the current open record')
-  .option('--record-id <id>', 'Target a specific record by ID')
-  .option('--session-summary <file>', 'Path to session summary markdown file to append as evidence')
+  .option('--text <text>', 'Evidence content as a string')
+  .option('--session-summary <file>', 'Read a session summary markdown file and append as evidence')
   .option('--git-diff', 'Capture git status + git diff HEAD as evidence')
-  .action((opts) => {
+  .option('--source <source>', 'Evidence source label (auto-set per option, or override)')
+  .action(async (opts) => {
+    checkWorkspace();
     if (!opts.last && !opts.recordId) {
       console.error('Error: specify --last or --record-id <id>');
       process.exit(1);
     }
-    if (!opts.sessionSummary && !opts.gitDiff) {
-      console.error('Error: specify --session-summary <file> or --git-diff');
+
+    const hasContent = !!(opts.text || opts.sessionSummary || opts.gitDiff);
+    if (!hasContent && process.stdin.isTTY) {
+      console.error('Error: no text provided. Use --text, --session-summary, --git-diff, or pipe content via stdin.');
       process.exit(1);
     }
 
     const store = new IediStore();
     try {
-      let recordId: string;
-      if (opts.last) {
-        const open = store.getOpenRecord();
-        if (!open) {
-          console.error('Error: no open record. Run "iedi start" first.');
-          process.exit(1);
-        }
-        recordId = open.record_id;
-      } else {
-        recordId = opts.recordId as string;
+      const recordId = resolveRecordId(store, opts);
+      const source = resolveSource(opts);
+      let count = 0;
+
+      if (opts.text) {
+        store.appendEvidence(recordId, { content: opts.text as string, source });
+        count++;
       }
 
       if (opts.sessionSummary) {
         const content = readFileSync(opts.sessionSummary as string, 'utf-8');
-        store.appendEvidence(recordId, { content, source: 'session_summary' });
-        console.log(`Session summary captured for ${recordId}`);
+        store.appendEvidence(recordId, { content, source });
+        count++;
       }
 
       if (opts.gitDiff) {
@@ -162,7 +148,6 @@ evidenceCmd
             encoding: 'utf-8',
             stdio: ['pipe', 'pipe', 'pipe'],
           });
-          // git diff HEAD fails when there are no commits; fall back to empty diff
           let diff = '';
           try {
             diff = execSync('git diff HEAD', {
@@ -173,12 +158,27 @@ evidenceCmd
           const content =
             `## git status\n\`\`\`\n${status.trim()}\n\`\`\`\n\n` +
             `## git diff HEAD\n\`\`\`diff\n${diff.trim()}\n\`\`\``;
-          store.appendEvidence(recordId, { content, source: 'git_diff' });
-          console.log(`Git diff captured for ${recordId}`);
+          store.appendEvidence(recordId, { content, source });
+          count++;
         } catch {
           console.log('Skipped: not a git repository or git is not available.');
         }
       }
+
+      if (!hasContent) {
+        // No content option given — fall back to stdin
+        const content = await readStdin();
+        if (!content) {
+          console.error('Error: stdin was empty.');
+          process.exit(1);
+        }
+        store.appendEvidence(recordId, { content, source });
+        count++;
+      }
+
+      // Get final evidence count for accurate reporting
+      const record = store.getRecord(recordId);
+      console.log(`Evidence added to ${recordId} (${record?.evidence.length ?? count} item(s))`);
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
@@ -199,6 +199,7 @@ program
   .option('--insight-requester <text>', 'Retrospective insight (user perspective)')
   .addOption(new Option('--status <status>', 'Completion status').choices(['completed', 'failed']).default('completed'))
   .action((opts) => {
+    checkWorkspace();
     if (!opts.last && !opts.recordId) {
       console.error('Error: specify --last or --record-id <id>');
       process.exit(1);
@@ -206,17 +207,7 @@ program
 
     const store = new IediStore();
     try {
-      let recordId: string;
-      if (opts.last) {
-        const open = store.getOpenRecord();
-        if (!open) {
-          console.error('Error: no open record. Run "iedi start" first.');
-          process.exit(1);
-        }
-        recordId = open.record_id;
-      } else {
-        recordId = opts.recordId as string;
-      }
+      const recordId = resolveRecordId(store, opts);
 
       const record = store.closeRecord({
         record_id: recordId,
@@ -256,6 +247,7 @@ program
   .option('--limit <n>', 'Maximum records to show', '20')
   .option('--json', 'Output raw JSON')
   .action((opts) => {
+    checkWorkspace();
     const store = new IediStore();
     try {
       const parsedLimit = parseInt(opts.limit as string, 10);
@@ -297,6 +289,39 @@ program
     } finally {
       store.close();
     }
+  });
+
+// ---- deprecated commands --------------------------------------------------
+
+program
+  .command('start')
+  .description('DEPRECATED — use "iedi open" instead')
+  .allowUnknownOption()
+  .action(() => {
+    console.error("Error: 'iedi start' is deprecated. Use 'iedi open' instead.");
+    process.exit(1);
+  });
+
+const deprecatedEvidence = program
+  .command('evidence')
+  .description('DEPRECATED — use "iedi add evidence" instead');
+
+deprecatedEvidence
+  .command('add')
+  .description('DEPRECATED')
+  .allowUnknownOption()
+  .action(() => {
+    console.error("Error: 'iedi evidence add' is deprecated. Use 'iedi add evidence' instead.");
+    process.exit(1);
+  });
+
+deprecatedEvidence
+  .command('capture')
+  .description('DEPRECATED')
+  .allowUnknownOption()
+  .action(() => {
+    console.error("Error: 'iedi evidence capture' is deprecated. Use 'iedi add evidence --session-summary <file>' or 'iedi add evidence --git-diff' instead.");
+    process.exit(1);
   });
 
 // ---- entry point ---------------------------------------------------------

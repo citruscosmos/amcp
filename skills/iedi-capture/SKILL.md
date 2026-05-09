@@ -19,7 +19,7 @@ Evidence・Delta・Provider/Requester Insight を生成する。
 
 次のコマンドを実行する:
 ```bash
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts query --json --limit 3
+iedi query --json --limit 3
 ```
 
 `"status": "open"` のレコードがある場合:
@@ -112,11 +112,11 @@ Step 7 以降で `/iedi-end` と同じ生成ロジックを使う。
 
 ---
 
-### Step 6: iedi start の実行
+### Step 6: iedi open の実行
 
 次のコマンドを実行する:
 ```bash
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts start \
+iedi open \
   --intent "<INTENT>" \
   --work-domain <WORK_DOMAIN>
 ```
@@ -143,7 +143,7 @@ CLI の出力から `record_id` を取得する。
 
 Evidence テキストを確定したら実行する:
 ```bash
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts evidence add --last \
+iedi add evidence --last \
   --source "session_capture" \
   --text "<EVIDENCE_TEXT>"
 ```
@@ -249,7 +249,7 @@ echo "$IEDI_DIR/sessions/delta.txt"
 IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-cd "C:/Users/citru/dev/amcp" && npx tsx src/cli/iedi.ts close --last \
+iedi close --last \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```
