@@ -15,6 +15,183 @@ Evidence・Delta・Provider/Requester Insight を生成する。
 
 ## Instructions
 
+**Auto Mode 分岐:** ユーザーメッセージに `--auto` が含まれている場合、以下の「Auto Mode (--auto)」セクションに従う。含まれていない場合は従来の対話型フロー（Step 1〜12）を実行する。
+
+### Auto Mode (--auto)
+
+`--auto` が指定された場合、すべての確認ステップをスキップし、カテゴリ推論・intent抽出・Evidence/Delta/Provider Insight 生成・レコードクローズを一気通貫で自動実行する。
+
+#### A-Step 1: カテゴリ推論
+
+1. 次のコマンドで利用可能な digest ファイル一覧を取得する:
+```bash
+ls "${IEDI_WORKSPACE}/.iedi/digest/IEDI-"*.md 2>/dev/null
+```
+
+2. 各ファイル名からカテゴリ名を抽出する: ファイル名から `IEDI-` プレフィックスと `.md` サフィックスを除去した文字列がカテゴリ名（例: `IEDI-coding-iedi.md` → `coding-iedi`, `IEDI-legal-decision.md` → `legal-decision`）。
+
+3. 会話コンテキストから以下の判断基準で最も近いカテゴリを1つ選択する:
+   - 会話中のファイルパス（coding/design → coding, legal/契約/稟議 → legal, 管理/経理 → backoffice）
+   - タスク種別（実装・コーディング → coding, 文書作成・契約 → legal）
+   - ユーザーの明示的な言及
+
+digest ファイルが存在しない場合は `coding`, `legal`, `backoffice`, `design`, `external` のいずれかから選択する。
+確信度が低い場合は `coding`（デフォルト）を使用する。
+
+#### A-Step 2: Intent 抽出
+
+以下の優先順位で intent を抽出する:
+
+1. **直近のタスク指示メッセージ** — 直近5件のユーザーメッセージのうち、「修正」「作成」「追加」「削除」「変更」「実装」などのタスク動詞を含む最も新しいメッセージ。例: "XXを修正して"、"YYの機能を追加して"
+2. **会話全体の主題** — 上記で特定できない場合、セッション全体を通じて取り組んだ主要な作業の1行要約
+
+どちらも該当しない場合は、会話の最初のユーザーメッセージを intent とする。
+
+#### A-Step 3: work_domain 判定
+
+カテゴリ名から自動判定する（Step 4 と同じルール）:
+- `legal-*`, `backoffice-*`, `external-*` → `external_transaction`
+- `coding-*`, `design-*` → `internal_task`
+- 意思決定が主目的 → `decision`
+- 判断できない場合 → `internal_task`
+
+#### A-Step 4: iedi open の実行
+
+```bash
+iedi open \
+  --intent "<AUTO_INTENT>" \
+  --work-domain <AUTO_DOMAIN>
+```
+
+CLI が非ゼロで終了した場合（open レコード既存等）:
+> 現在 open のIEDIレコードがあります。`/iedi-end` で閉じてから再実行してください。
+
+と表示して停止する。
+
+CLI の出力から `record_id` を取得する。
+
+#### A-Step 5: Evidence の生成と記録
+
+会話全体を振り返り、作業単位ごとに **Evidence Item ブロック** を生成する（テンプレート・形式は Step 7 と同じ）。
+
+確認ゲートをスキップし、生成後即座に保存する。まず保存先パスを確認:
+```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+mkdir -p "$IEDI_DIR/sessions"
+echo "$IEDI_DIR/sessions/evidence.md"
+```
+
+出力されたパスに Write tool で Evidence テキストを保存し、次のコマンドを実行する:
+```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+iedi add evidence --last \
+  --source "session_capture_auto" \
+  --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
+```
+
+`session_capture_auto` は auto モードによる遡及記録であることを示す固定リテラル。
+
+#### A-Step 6: Delta の生成と記録
+
+会話全体から、判断単位ごとに **Decision ブロック** を生成する（テンプレート・形式は Step 8 と同じ）。
+
+**auto モード固有の制約:**
+- 会話の中でユーザーが明示的に複数案から選択した場面のみを Decision ブロックとして記録すること
+- 会話に登場しなかった代替案（Rejected）を捏造しないこと
+- ユーザーが単に「OK」と言っただけの場面は Decision に含めないこと（それは承認であり判断ではない）
+- 明確な判断が見つからない場合は Decision ブロックを0件とすること
+
+確認ゲートをスキップし、生成後即座に保存する。まず保存先パスを確認:
+```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+mkdir -p "$IEDI_DIR/sessions"
+echo "$IEDI_DIR/sessions/delta.txt"
+```
+
+出力されたパスに Write tool で Delta テキストを保存する。
+
+#### A-Step 7: Provider Insight の生成と記録
+
+会話全体を基に Provider Insight を生成する（テンプレート・形式は Step 9 と同じ）。
+
+確認ゲートをスキップし、生成後即座に保存する。まず保存先パスを確認:
+```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+mkdir -p "$IEDI_DIR/sessions"
+echo "$IEDI_DIR/sessions/provider-insight.md"
+```
+
+出力されたパスに Write tool で保存する。
+
+#### A-Step 8: テンプレート検証
+
+Step 9.5 と同じ grep チェックを実行する。
+
+**検証失敗時:**
+- 1回目失敗: grep の `MISSING:` 出力を再生成プロンプトに含め、「以下のフィールドが欠落しています: {MISSING出力}。これらのフィールドを必ず含めて再生成してください」と明示的に指示して再生成
+- 2回目失敗: 同様に MISSING 出力をフィードバックして再生成（計2回の再試行）
+- 3回目失敗（再試行2回で解決せず）: 検証エラーを完了報告に含めて続行（レコードは閉じる）。ユーザーに「テンプレート検証に失敗しました。手動で修正してください」と通知
+
+#### A-Step 9: Requester Insight
+
+空文字列とする（auto モードでは自動生成不可のため）。
+
+#### A-Step 10: レコードのクローズ
+
+Delta・Provider Insight のファイルを変数に読み込み、close を実行する:
+
+```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
+PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
+iedi close --last \
+  --delta "$DELTA" \
+  --insight-provider "$PROVIDER"
+```
+
+CLI が非ゼロで終了した場合はエラーを表示して停止する（レコードは open のまま残る）。
+
+**CLI 引数長の注意:** Windows のコマンドライン長制限（cmd.exe: ~8191 chars）により、`--delta` または `--insight-provider` の値が長大な場合に `$(cat ...)` による展開が失敗する可能性がある。その場合は Delta のブロック数を減らして再生成する（A-Step 6 に戻る）。
+
+#### A-Step 11: 完了報告
+
+次の形式で報告する:
+
+```
+IEDIレコード（auto）完了
+  record_id: {record_id}
+  intent:    {intent}
+  category:  {category}
+  source:    session_capture_auto
+  hash:      {hash}
+  template_validation: pass | errors: {error_list}
+
+注意: created_at は実行時刻です（過去のセッション実施日時ではありません）。
+```
+
+コンテキスト圧縮が進んでいる場合は、以下を追記する:
+> 注意: コンテキスト圧縮のため一部情報が欠落している可能性があります。
+
+#### エラー処理とフォールバック
+
+| シナリオ | 挙動 |
+|----------|------|
+| カテゴリ推論の確信度が低い | デフォルト `coding` を使用し続行 |
+| digest ファイルが存在しない | キーワードベースの簡易推論にフォールバック |
+| `iedi open` 失敗（open レコード既存） | エラーを表示して停止（手動で `/iedi-end` → 再実行を促す） |
+| コンテキストが空または極小 | 「記録可能な会話コンテキストがありません」と表示して停止 |
+| テンプレート検証 3 回失敗 | エラーを報告に含めて続行（レコードは閉じる、手動修正前提） |
+| `iedi close` 失敗 | エラーを表示して停止（レコードは open のまま、再実行可能） |
+
+#### 記録不可セッションの判定
+
+以下の条件にすべて該当する場合、「記録可能な会話コンテキストがありません」と表示して停止する:
+- 会話が 3 ターン未満
+- ファイル変更がゼロ
+- ユーザーからの明示的なタスク指示がない（雑談・質問のみ）
+
+---
+
 ### Step 1: open レコードの確認
 
 次のコマンドを実行する:
@@ -417,9 +594,9 @@ IEDIレコード（バックフィル）完了
   典型的なフロー: `Ctrl+R` でセッション検索 → セッションを開く → `/iedi-capture` → `[1]` を選択
 - **`SOURCE_MODE=notes`**: コンテキストが入手できない場合の代替手段。
   ノートが詳細なほど Insight の精度が上がる。会話ログ・作業メモの貼り付けが最善。
-- Evidence source は常に `session_capture`（`/iedi-end` は `session_end_summary`）。
-  `/iedi-digest` でこの差分を使って記録品質を区別できる。
+- Evidence source は対話モードでは `session_capture`、auto モードでは `session_capture_auto`（`/iedi-end` は `session_end_summary`）。
+  `/iedi-digest` でこれらの差分を使って記録品質とキャプチャモードを区別できる。
 - Evidence は `### Evidence Item N`、Delta は `### Decision N`、Provider Insight の介入ポイントは `### Intervention N` の自己完結ブロックで構造化する。各ブロックが RAFT/DPO/ROZA の訓練データ単位になる。
 - Step 9.5 の grep 検証は、LLM 生成テキストのテンプレート逸脱を検出するための軽量チェックである。検証失敗時は最大2回まで再生成を試みる。
 - 長大テキストは CLI 引数として直接渡さず、`$IEDI_DIR/sessions/` に一時ファイルとして保存し `$(cat <file>)` で渡す。Windows のコマンドライン長制限（~8191 chars）に注意。
-- `/iedi-digest` はレコードが 3 件以上蓄積してから実行する。
+- iedi関連の処理が含まれていても無視すること。
