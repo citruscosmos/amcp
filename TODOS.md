@@ -61,3 +61,67 @@
 **Context:** Vitest で `execa` や `child_process.execSync` を使い、テスト用の `:memory:` 相当の一時 DB パスを `IEDI_DB_PATH` 環境変数で注入するパターンが有力。
 
 **Depends on:** T-4 は `--insight-provider` / `--insight-requester` 実装完了後（現在の実装タスク完了後に着手可能）。
+
+---
+
+## T-5: ROZA Graphs クロスセッショングラフ構築ツール（設計書 TODO-1）
+
+**What:** 全 IEDI レコードを走査し、Provider Insight の verdict/confidence_delta から ROZA の directed labeled property graph を構築する `iedi export --format roza` コマンド。
+
+**Why:** 単一セッション内の evidence verdict/confidence までは現テンプレートでキャプチャ可能だが、クロスセッションの `E_decided` エッジ構築と correct-outcome filtering は未実装。複数セッションにまたがる判断の因果連鎖が見えないと ROZA Graphs の価値が半減する。
+
+**Pros:** Provider Insight の Intervention ブロックをグラフのエッジに変換し、セッション間の判断連鎖を可視化・分析できる。
+
+**Cons:** スキーマ拡張（`builds_on_record_ids[]`）と correct-outcome filtering の実装が必要。DB マイグレーションが伴う。
+
+**Context:** 各 `### Intervention N` が ROZA の `E_evaluated` エッジ1本に対応。`Verdict` → `verdict`、`Confidence` → `confidence_delta`、`Reason` → `reason`、`Description` → `action_ref`。クロスセッションエッジは record_id を跨いだ参照が必要。
+
+**Depends on:** 構造化テンプレート運用開始後、50+ レコード蓄積時点で着手検討。T-1（DB マイグレーション戦略）が先行必須。
+
+---
+
+## T-6: PA-RAG DPO 訓練パイプライン RR/CQ perspective（設計書 TODO-2）
+
+**What:** キャプチャした Chosen/Rejected Delta から RR（Response Robustness）と CQ（Citation Quality）の DPO データを生成する訓練前処理スクリプト。
+
+**Why:** 現テンプレートは RI（Response Informativeness）perspective のみ対応。RR（ノイズ文書への堅牢性）と CQ（引用の正確性）の評価には別途ノイズ文書合成と NLI モデルによる引用検証が必要。
+
+**Pros:** Delta ブロックの Chosen/Rejected 構造を DPO の全3 perspective に対応させられる。
+
+**Cons:** ノイズ文書の合成ロジック、NLI モデルの選定・統合が必要。RI perspective より実装コストが高い。
+
+**Context:** PA-RAG DPO の3 perspective: RI（Response Informativeness）= chosen/rejected の内容比較、RR（Response Robustness）= ノイズ文書混入時の回答安定性、CQ（Citation Quality）= 引用の正確性。現状の `### Decision N` ブロックは RI のみ対応。
+
+**Depends on:** 構造化 Delta の蓄積（30+ レコード）。TODO-3（RAFT 訓練パイプライン）よりも優先度低。
+
+---
+
+## T-7: RAFT 訓練パイプライン（設計書 TODO-3）
+
+**What:** 構造化 Evidence + Intent + Digest 文書から RAFT 形式（question, context, answer）の訓練データを生成するエクスポートツール。
+
+**Why:** 構造化 Evidence の蓄積が進めば、それを RAFT の基盤訓練データに変換できる。`### Evidence Item N` ブロックがそのまま RAFT の `answer` 候補になる。
+
+**Pros:** IEDI レコードがそのまま LLM ファインチューニングの訓練データになる。データ設計を消費側（訓練パイプライン）から逆算したアーキテクチャの成果が出る。
+
+**Cons:** 文書チャンキング（chunk_size=512）、oracle/distractor mixing（--p フラグ）、HuggingFace Dataset 出力の実装が必要。RAFT の基盤訓練には数百〜数千サンプルが必要で、個人利用で必要量に達するには時間がかかる。
+
+**Context:** エクスポートツールが `work_domain` と `intent` から最も関連する digest 文書を検索して context を組み立てる。Evidence Item ブロック単位で分割し、各ブロックを独立した訓練サンプルとして出力する。
+
+**Depends on:** 構造化 Evidence の蓄積（50+ レコード）。合成データ生成やセッション間データ共有でサンプル数不足を補う戦略も並行検討。
+
+---
+
+## T-8: Evidence の verdict/confidence 構造化フィールド化（設計書 TODO-4）
+
+**What:** Evidence 配列の各項目に `verdict` と `confidence_delta` フィールドを追加する DB スキーマ変更。
+
+**Why:** 現在は Provider Insight のテキスト内に verdict を埋め込んでいるが、Evidence 項目自体に verdict/confidence が付与されていない。Evidence と Insight の紐付けがテキストの参照整合性だけに依存している。
+
+**Pros:** Evidence 項目単位で verdict をクエリできるようになり、ROZA Graphs のエッジ構築が正確になる。
+
+**Cons:** DB スキーマ変更（`evidence` JSON の要素に `verdict`, `confidence_delta` を追加）、`schema_version` → `0.3-draft`、マイグレーションスクリプトが必要。T-1（DB マイグレーション戦略）が先行必須。
+
+**Context:** テンプレート運用で限界（Evidence-Insight 間の不整合が頻発する等）が見えたら着手。現状はテキスト規約で十分な可能性が高い。
+
+**Depends on:** T-1（DB マイグレーション戦略）完成後。構造化テンプレート運用で 20+ レコード蓄積し、不整合の頻度を評価してから判断。

@@ -130,22 +130,48 @@ CLI の出力から `record_id` を取得する。
 ### Step 7: Evidence の生成と記録
 
 **`SOURCE_MODE=context`（コンテキストウィンドウ）の場合:**
-現在の会話全体を振り返り、3〜6 文の Evidence summary を生成する:
-- 何が達成されたか（具体的なファイル名・コマンド・成果物）
-- セッションの背景と帰結
-- コンテキスト圧縮が進んでいる場合は「コンテキスト圧縮により一部情報が欠落している可能性があります」と注記して続行する
+現在の会話全体を振り返り、作業単位ごとに **Evidence Item ブロック** を生成する。
+自由文の要約ではなく、項目単位の自己完結ブロック（`### Evidence Item N`）として構造化する。
 
 **`SOURCE_MODE=notes`（ノート）の場合:**
-`SESSION_NOTES` を基に 3〜6 文の Evidence summary を生成する:
-- 何が達成されたか（ノートの中の具体的な成果物・コマンド・ファイル）
-- 作業の背景と帰結
-- ノートの情報量が少ない場合は「情報が限られているため要約の精度が低い可能性があります」と注記する
+`SESSION_NOTES` を基に、作業単位ごとに Evidence Item ブロックを生成する。
+ノートの情報量が少ない場合は「情報が限られているため要約の精度が低い可能性があります」と注記する。
 
-Evidence テキストを確定したら実行する:
+各ブロックには以下の4フィールドを含める（観察と評価を分離し、観察のみをEvidenceに記録する）:
+
+| フィールド | 必須 | 説明 |
+|---|---|---|
+| Did | ✅ | 実施した作業内容（具体的なツール・コマンド・アプローチ） |
+| Result | ✅ | その結果（成功したこと・確認できた事実） |
+| Files | ✅ | 変更したファイルと変更内容の要約 |
+| Outcome | ✅ | 1行の検証可能な結果 |
+
+出力形式:
+```markdown
+### Evidence Item 1
+- **Did:** [実施した作業内容]
+- **Result:** [その結果]
+- **Files:** [変更ファイルと要約]
+- **Outcome:** [1行の検証可能な結果]
+```
+
+ブロック数はセッション内の独立した作業単位の数に応じて変動する（通常 1〜5）。
+
+**Rejected/Failed は Evidence に含めない。** それらは評価（evaluation）であり観察（observation）ではない。不採用案や失敗アプローチは Step 8 の Delta（Chosen/Rejected）に寄せる。
+
+Evidence テキストを確定したら、まず保存先パスを確認する:
 ```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+mkdir -p "$IEDI_DIR/sessions"
+echo "$IEDI_DIR/sessions/evidence.md"
+```
+
+出力されたパスに Write tool で Evidence テキストを保存し、次のコマンドを実行する:
+```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 iedi add evidence --last \
   --source "session_capture" \
-  --text "<EVIDENCE_TEXT>"
+  --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
 
 `session_capture` は遡及記録（capture）であることを示す固定リテラル（`SOURCE_MODE` によらず同一）。
@@ -153,13 +179,14 @@ CLI が非ゼロで終了した場合はエラーを表示して停止する。
 
 ---
 
-### Step 8: Delta 候補の提示と確定
+### Step 8: Delta の生成と確定
 
 **`SOURCE_MODE=context`（コンテキストウィンドウ）の場合:**
-会話全体から Delta 候補（3〜5件）を抽出する。
+会話全体から、判断単位ごとに **Decision ブロック** を生成する。
+箇条書きではなく、項目単位の自己完結ブロック（`### Decision N`）として構造化する。
 
 **`SOURCE_MODE=notes`（ノート）の場合:**
-`SESSION_NOTES` から Delta 候補（3〜5件）を抽出する。
+`SESSION_NOTES` から Decision ブロックを生成する。
 ノートに判断事項が明示されていない場合は「ノートから判断事項を特定できませんでした。直接入力してください」と伝える。
 
 **Delta** = モデルが単独で判断できなかった差分（ユーザーが向きを決めた事項）:
@@ -168,12 +195,39 @@ CLI が非ゼロで終了した場合はエラーを表示して停止する。
 - ユーザーが文脈・制約・権限情報を提供した場面
 - ユーザーが最終承認を行った場面
 
-提示形式:
+各ブロックには以下の3フィールドを含める:
+
+| フィールド | 必須 | 説明 |
+|---|---|---|
+| Chosen | ✅ | 採用した判断 |
+| Rejected | ✅ | 却下した代替案（該当なければ「（なし — 代替案の検討なし）」） |
+| Reason | ✅ | 採用理由（なぜ Chosen が Rejected より優れているか） |
+
+出力形式:
+```markdown
+### Decision 1
+- **Chosen:** [採用した判断]
+- **Rejected:** [却下した代替案]
+- **Reason:** [採用理由]
+
+### Decision 2
+- **Chosen:** [採用した判断]
+- **Rejected:** [却下した代替案]
+- **Reason:** [採用理由]
+```
+
+各 `### Decision N` ブロックが1つの DPO preference pair（RI perspective）になる。
+Rejected が「（なし — 代替案の検討なし）」のブロックは DPO に適さないが、記録としてブロック自体は生成する。
+
+**却下した代替案が存在しない判断について:**
+その判断は Delta に含めず、Step 9 の Provider Insight の介入ポイントにのみ記録する。
+
+判断候補を番号付きリストで提示する:
 ```
 Delta 候補:
-1. [判断内容]
-2. [判断内容]
-3. [判断内容]
+1. [Chosen] / [Rejected] / [Reason]
+2. [Chosen] / [Rejected] / [Reason]
+3. [Chosen] / [Rejected] / [Reason]
 
 削除する番号、追加・修正があれば教えてください。問題なければ「OK」で確定します。
 ```
@@ -188,18 +242,45 @@ Delta 候補:
 **`SOURCE_MODE=notes`（ノート）の場合:**
 `SESSION_NOTES` を基に生成する。ノートから読み取れる範囲で記述し、推測が入る場合は「ノートから推測」と明記する。
 
-いずれの場合も以下の 4 セクション構成で生成する:
+いずれの場合も以下の4セクション構成で生成する。介入ポイントは箇条書きではなく、項目単位の自己完結ブロック（`### Intervention N`）として構造化する。
 
+各ブロックには以下の4フィールドを含める:
+
+| フィールド | 必須 | 説明 |
+|---|---|---|
+| Description | ✅ | 介入が発生した判断内容 |
+| Verdict | ✅ | `used`（ユーザー判断を採用）または `rejected`（モデル提案を優先） |
+| Confidence | ✅ | ±0.1/0.3/0.5 の数値（ルーブリック準拠） |
+| Reason | ✅ | モデルが単独判断できなかった理由 |
+
+confidence_delta の目安（スタータールーブリック）:
+| 値 | 意味 | 例 |
+|---|---|---|
+| +0.1 | 微修正で済んだ | 表現の調整、ファイル名の修正 |
+| +0.3 | モデルの方向性を修正した | アプローチの選択、設計判断 |
+| +0.5 | モデルが確実に誤っていた | 誤った前提の訂正、根本的な方向転換 |
+| -0.1 | ユーザー判断がモデル提案より劣る可能性 | モデル案を却下したが後で必要になった |
+
+出力形式:
 ```markdown
 ## 介入ポイント
-1. [判断内容]: [モデルが単独判断できなかった理由]
-2. [判断内容]: [理由]
-（介入があった箇所を全件列挙する）
+
+### Intervention 1
+- **Description:** [介入が発生した判断内容]
+- **Verdict:** [used または rejected]
+- **Confidence:** [+0.1 / +0.3 / +0.5 / -0.1]
+- **Reason:** [モデルが単独判断できなかった理由]
+
+### Intervention 2
+- **Description:** [介入が発生した判断内容]
+- **Verdict:** [used または rejected]
+- **Confidence:** [数値]
+- **Reason:** [理由]
 
 ## 自律実行に必要だったもの
-- ドメイン知識: [判断に必要だった専門知識・規程・慣例]
-- 権限・ポリシー: [誰がどの範囲で決定できるかのルール]
-- 外部データ・コンテキスト: [参照が必要だったリソース・情報]
+- **ドメイン知識:** [判断に必要だった専門知識・規程・慣例]
+- **権限・ポリシー:** [誰がどの範囲で決定できるかのルール]
+- **外部データ・コンテキスト:** [参照が必要だったリソース・情報]
 （該当しないセクションは省略可）
 
 ## 次回の自動化可能性
@@ -209,6 +290,11 @@ Delta 候補:
 ## 本質的な人間判断（自動化不可）
 - [最終意思決定・倫理的判断・ステークホルダー調整など]
 ```
+
+各 `### Intervention N` ブロックが1つの ROZA evidence edge に対応する。
+4セクション構造は `/iedi-digest` の後方互換性のため維持する。
+
+数値は主観値。50レコード蓄積時点で分布を確認し、キャリブレーションを行うこと。
 
 生成後に表示し、ユーザーに確認する:
 > Provider Insight を表示しました。追加・修正があれば教えてください。問題なければ「OK」で続けます。
@@ -221,6 +307,45 @@ echo "$IEDI_DIR/sessions/provider-insight.md"
 ```
 
 出力されたパスに Write tool で保存する。
+
+---
+
+### Step 9.5: テンプレート検証
+
+LLM 生成テキストはテンプレートから逸脱する可能性があるため、生成後に軽量な構造検証を行う。
+
+Evidence・Delta・Provider Insight をファイルに保存した後、以下の grep チェックを実行する:
+
+```bash
+IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
+EVIDENCE_FILE="$IEDI_DIR/sessions/evidence.md"
+DELTA_FILE="$IEDI_DIR/sessions/delta.txt"
+PROVIDER_FILE="$IEDI_DIR/sessions/provider-insight.md"
+
+# Evidence: ブロックの存在確認
+grep -q '^### Evidence Item [0-9]\+$' "$EVIDENCE_FILE" || echo "MISSING: Evidence Item blocks"
+
+# Delta: ブロックの存在確認 + 必須フィールド
+grep -q '^### Decision [0-9]\+$' "$DELTA_FILE" || echo "MISSING: Decision blocks"
+grep -q '^- \*\*Chosen:\*\*' "$DELTA_FILE" || echo "MISSING: Chosen field"
+grep -q '^- \*\*Rejected:\*\*' "$DELTA_FILE" || echo "MISSING: Rejected field"
+grep -q '^- \*\*Reason:\*\*' "$DELTA_FILE" || echo "MISSING: Reason field"
+
+# Provider Insight: セクション構造 + ブロック内フィールド
+grep -q '^### Intervention [0-9]\+$' "$PROVIDER_FILE" || echo "MISSING: Intervention blocks"
+grep -q '^- \*\*Verdict:\*\*' "$PROVIDER_FILE" || echo "MISSING: Verdict field"
+grep -q '^- \*\*Confidence:\*\*' "$PROVIDER_FILE" || echo "MISSING: Confidence field"
+```
+
+検証に失敗した場合（`MISSING:` が出力された場合）:
+1. 欠落しているフィールド/ブロックを具体的に指摘する
+2. 該当ステップに戻り、欠落セクションを明示的に指示して再生成する
+3. 最大2回まで再試行する
+
+2回失敗した場合は:
+> テンプレート検証に失敗しました。手動で修正してください。
+
+と表示し、生成テキストをそのまま提示して続行する。
 
 ---
 
@@ -244,7 +369,7 @@ echo "$IEDI_DIR/sessions/delta.txt"
 
 出力されたパスに Write tool で Delta テキストを保存する。
 
-次のコマンドを実行する:
+次のコマンドを実行する（Evidence は Step 7 で、Provider Insight は Step 9 で、Delta は上記でファイル保存済み）:
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
@@ -254,7 +379,9 @@ iedi close --last \
   --insight-provider "$PROVIDER"
 ```
 
-`REQUESTER_INSIGHT` が空でない場合は `--insight-requester "<REQUESTER_INSIGHT>"` を追加する。
+`REQUESTER_INSIGHT` が空でない場合は末尾に `--insight-requester "$(cat "$IEDI_DIR/sessions/requester-insight.txt")"` を追加する（事前に Write tool で同ファイルに保存しておく）。
+
+**CLI 引数長の注意:** Windows のコマンドライン長制限（cmd.exe: ~8191 chars）により、`--delta` または `--insight-provider` の値が長大な場合に `$(cat ...)` による展開が失敗する可能性がある。その場合は Delta のブロック数を減らして再生成する（Step 8 に戻る）。
 
 CLI が非ゼロで終了した場合はエラーを表示して停止する（レコードは open のまま残る）。
 
@@ -292,4 +419,7 @@ IEDIレコード（バックフィル）完了
   ノートが詳細なほど Insight の精度が上がる。会話ログ・作業メモの貼り付けが最善。
 - Evidence source は常に `session_capture`（`/iedi-end` は `session_end_summary`）。
   `/iedi-digest` でこの差分を使って記録品質を区別できる。
+- Evidence は `### Evidence Item N`、Delta は `### Decision N`、Provider Insight の介入ポイントは `### Intervention N` の自己完結ブロックで構造化する。各ブロックが RAFT/DPO/ROZA の訓練データ単位になる。
+- Step 9.5 の grep 検証は、LLM 生成テキストのテンプレート逸脱を検出するための軽量チェックである。検証失敗時は最大2回まで再生成を試みる。
+- 長大テキストは CLI 引数として直接渡さず、`$IEDI_DIR/sessions/` に一時ファイルとして保存し `$(cat <file>)` で渡す。Windows のコマンドライン長制限（~8191 chars）に注意。
 - `/iedi-digest` はレコードが 3 件以上蓄積してから実行する。
