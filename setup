@@ -45,7 +45,19 @@ if [ ! -x "$IEDI_BIN" ]; then
 fi
 echo "Binary: $IEDI_BIN"
 
-# ---- Step 3: export AMCP_HOME in shell profile ----
+# ---- Step 3: register sub-skills via symlinks (gstack pattern) ----
+# Claude Code discovers skills by scanning ~/.claude/skills/<name>/SKILL.md.
+# Each sub-skill needs a symlink from the flat directory to the nested one
+# inside $AMCP_HOME (e.g. ~/.claude/skills/iedi-setup/SKILL.md →
+# ~/.claude/skills/amcp/iedi-setup/SKILL.md).
+echo "==> Registering sub-skills..."
+for _SKILL in iedi-setup iedi-start iedi-end iedi-capture; do
+  mkdir -p "$HOME/.claude/skills/$_SKILL"
+  ln -sf "$AMCP_HOME/$_SKILL/SKILL.md" "$HOME/.claude/skills/$_SKILL/SKILL.md"
+  echo "  $HOME/.claude/skills/$_SKILL/SKILL.md → $AMCP_HOME/$_SKILL/SKILL.md"
+done
+
+# ---- Step 4: export AMCP_HOME in shell profile ----
 _SHELL_RC=""
 case "$SHELL" in
   */zsh) _SHELL_RC="$HOME/.zshrc" ;;
