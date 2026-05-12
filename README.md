@@ -12,53 +12,45 @@ See [docs/amcp-whitepaper.md](docs/amcp-whitepaper.md) for the full specificatio
 
 The project is in early development. We are implementing the IEDI work-record storage layer (`iedi` CLI), which serves as the foundational logging infrastructure for AMCP-compliant interactions.
 
-## Quick Start
+## Install
 
-### Prerequisites
+Prerequisites: **Node.js 20+**, **Claude Code**, and build tools (`python3`, `gcc`, `make` — for the `better-sqlite3` native addon).
 
-- Node.js 20+
-- Claude Code
-
-### 1. Clone and run setup
-
-```bash
-git clone https://github.com/citruscosmos/amcp.git
-cd amcp
-./setup
-```
-
-The setup script:
-- Checks build tools (`python3`, `gcc`, `make`) for `better-sqlite3`
-- Runs `npm install` in the repo (TypeScript compilation)
-- Cleans up old `~/.claude/skills/iedi-*` directories
-- Creates `~/.claude/skills/amcp/` with the unified skill layout
-- Installs the `iedi` CLI via `npm install` (compiles native addon, links binary)
-- Exports `AMCP_HOME` in your shell profile
-- Copies all skill files into place
-
-### 2. Restart Claude Code
-
-Restart Claude Code so it discovers the new skill paths. All IEDI skills (`/iedi-setup`, `/iedi-start`, `/iedi-end`, `/iedi-capture`) become available.
-
-### 3. Configure your workspace
-
-In Claude Code, run:
+Paste this into Claude Code:
 
 ```
-/iedi-setup
+git clone https://github.com/citruscosmos/amcp.git ~/.claude/skills/amcp && cd ~/.claude/skills/amcp && ./setup
 ```
 
-This sets `IEDI_WORKSPACE` so records are stored in `.iedi/` within your project. The `/iedi-setup` skill will also verify that the `iedi` CLI is installed correctly.
+This clones the repo directly into your Claude Code skills directory, installs dependencies, compiles TypeScript, and links the `iedi` CLI. Restart Claude Code after it finishes.
 
-### 4. Usage flow
+Then run `/iedi-setup` in Claude Code to configure your workspace.
+
+### Add skill routing to CLAUDE.md
+
+Append this to your project's `CLAUDE.md` so Claude Code knows when to invoke IEDI skills:
+
+```markdown
+## IEDI
+
+Available slash commands:
+- `/iedi-setup` — configure IEDI_WORKSPACE, verify CLI
+- `/iedi-start` — start an IEDI session
+- `/iedi-end` — end an IEDI session, generate Evidence/Delta/Insight
+- `/iedi-capture` — backfill a past session as an IEDI record
+- `/iedi-digest` — aggregate closed records into a knowledge document
+
+When starting any non-trivial task, invoke `/iedi-start` first.
+When the task is complete, invoke `/iedi-end`.
+```
+
+## Usage
 
 ```
 /iedi-start   → Select category, confirm intent, open session
-                  (iedi open --intent "...")
 ... do your work ...
 /iedi-end     → End session. Evidence, Delta, Insight generated
                   from context; record is closed.
-                  (iedi close --last ...)
 ```
 
 To retroactively record a past session:
@@ -69,14 +61,12 @@ To retroactively record a past session:
 
 ### Manual CLI usage
 
-The `iedi` binary is at `$AMCP_HOME/node_modules/.bin/iedi` (default: `~/.claude/skills/amcp/node_modules/.bin/iedi`).
+The `iedi` binary is at `~/.claude/skills/amcp/node_modules/.bin/iedi`.
 
 ```bash
-# If AMCP_HOME is exported in your shell profile:
-"$AMCP_HOME/node_modules/.bin/iedi" query
-"$AMCP_HOME/node_modules/.bin/iedi" open --intent "task description"
-"$AMCP_HOME/node_modules/.bin/iedi" close --last --delta "decisions" \
-  --insight-provider "model" --insight-requester "user"
+iedi query
+iedi open --intent "task description"
+iedi close --last --delta "decisions" --insight-provider "model" --insight-requester "user"
 ```
 
 ## License

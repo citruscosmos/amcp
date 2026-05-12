@@ -44,47 +44,27 @@ pwd
 
 ---
 
-### Step 2.5: iedi CLI のインストール (npm install)
+### Step 2.5: iedi CLI の確認
 
-AMCP スキルディレクトリで `npm install` を実行し、`iedi` CLI をインストールする。
+AMCP スキルディレクトリで `iedi` CLI が使用可能か確認する:
 
 ```bash
 AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
-
-# package.json が存在しない場合は bootstrap
-if [ ! -f "$AMCP_HOME/package.json" ]; then
-  echo "Bootstrapping $AMCP_HOME..."
-  mkdir -p "$AMCP_HOME"
-  cat > "$AMCP_HOME/package.json" << 'PKGJSON'
-{
-  "name": "amcp-skills",
-  "version": "0.1.0",
-  "private": true,
-  "description": "AMCP/IEDI skills and CLI for Claude Code",
-  "dependencies": {
-    "iedi": "github:citruscosmos/amcp"
-  }
-}
-PKGJSON
-fi
-
-echo "Installing iedi CLI in $AMCP_HOME..."
-if ! (cd "$AMCP_HOME" && npm install); then
-  echo "ERROR: npm install failed" >&2
-  echo "Check: build tools (python3, gcc, make), network, GitHub SSH key" >&2
-  exit 1
-fi
-
 IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+
 if [ ! -x "$IEDi_BIN" ]; then
-  echo "ERROR: $IEDi_BIN not found after install" >&2
-  exit 1
+  echo "CLI not found — running npm install in $AMCP_HOME..."
+  if ! (cd "$AMCP_HOME" && npm install); then
+    echo "ERROR: npm install failed" >&2
+    echo "Check: build tools (python3, gcc, make), network, Node.js 20+" >&2
+    exit 1
+  fi
 fi
 
-echo "CLI installed: $IEDi_BIN"
+echo "CLI: $IEDi_BIN"
 ```
 
-`npm install` が失敗する場合は、ビルドツール（`python3`, `gcc`, `make`）と GitHub SSH キーを確認するよう案内する。
+`npm install` が失敗する場合は、ビルドツール（`python3`, `gcc`, `make`）と Node.js のバージョンを確認するよう案内する。
 
 ---
 
