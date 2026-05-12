@@ -26,7 +26,16 @@ if [ -n "$MISSING" ]; then
 fi
 echo "Build tools: OK"
 
-# ---- Step 2: cleanup old flat skill directories ----
+# ---- Step 2: install repo dependencies (TypeScript compilation) ----
+echo "==> Installing repo dependencies..."
+if ! npm install; then
+  echo "ERROR: npm install failed in repo directory" >&2
+  echo "Check: network connectivity, disk space, and Node.js version (20+ required)" >&2
+  exit 1
+fi
+echo "Repo dependencies: OK"
+
+# ---- Step 3: cleanup old flat skill directories ----
 echo "==> Cleaning up old skill directories..."
 for _DIR in iedi-setup iedi-start iedi-end iedi-capture iedi-shared; do
   if [ -d "$HOME/.claude/skills/$_DIR" ]; then
@@ -35,7 +44,7 @@ for _DIR in iedi-setup iedi-start iedi-end iedi-capture iedi-shared; do
   fi
 done
 
-# ---- Step 3: bootstrap amcp directory ----
+# ---- Step 4: bootstrap amcp directory ----
 echo "==> Bootstrapping $AMCP_HOME..."
 mkdir -p "$AMCP_HOME"
 
@@ -55,7 +64,7 @@ PKGJSON
   echo "Created: $AMCP_HOME/package.json"
 fi
 
-# ---- Step 4: npm install (compiles better-sqlite3, links iedi binary) ----
+# ---- Step 5: npm install (compiles better-sqlite3, links iedi binary) ----
 echo "==> Installing iedi CLI..."
 if ! (cd "$AMCP_HOME" && npm install); then
   echo "ERROR: npm install failed in $AMCP_HOME" >&2
@@ -69,7 +78,7 @@ if [ ! -x "$IEDi_BIN" ]; then
 fi
 echo "Binary: $IEDi_BIN"
 
-# ---- Step 5: export AMCP_HOME in shell profile ----
+# ---- Step 6: export AMCP_HOME in shell profile ----
 _SHELL_RC=""
 case "$SHELL" in
   */zsh) _SHELL_RC="$HOME/.zshrc" ;;
@@ -87,7 +96,7 @@ elif [ -z "$_SHELL_RC" ]; then
   echo "  export AMCP_HOME=\"$AMCP_HOME\""
 fi
 
-# ---- Step 6: copy skill files into amcp directory ----
+# ---- Step 7: copy skill files into amcp directory ----
 echo "==> Installing skill files..."
 _SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ "$_SCRIPT_DIR" = "$AMCP_HOME" ]; then

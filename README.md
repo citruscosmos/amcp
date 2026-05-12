@@ -24,12 +24,12 @@ The project is in early development. We are implementing the IEDI work-record st
 ```bash
 git clone https://github.com/citruscosmos/amcp.git
 cd amcp
-npm install
 ./setup
 ```
 
 The setup script:
 - Checks build tools (`python3`, `gcc`, `make`) for `better-sqlite3`
+- Runs `npm install` in the repo (TypeScript compilation)
 - Cleans up old `~/.claude/skills/iedi-*` directories
 - Creates `~/.claude/skills/amcp/` with the unified skill layout
 - Installs the `iedi` CLI via `npm install` (compiles native addon, links binary)
