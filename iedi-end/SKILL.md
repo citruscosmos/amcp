@@ -28,11 +28,11 @@ If the Read fails, stop and report the error — do not proceed without the shar
 
 ## CLI & IEDI_DIR Setup
 
-Before any bash command, set AMCP_HOME, IEDi_BIN, and IEDI_DIR:
+Before any bash command, set AMCP_HOME, IEDI_BIN, and IEDI_DIR:
 
 ```bash
 AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
-IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
 IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}/.iedi"
 ```
 
@@ -41,7 +41,7 @@ IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}
 ### Step 1: Check for open record
 
 ```bash
-$IEDi_BIN query --json --limit 5
+$IEDI_BIN query --json --limit 5
 ```
 
 Find the record with `"status": "open"` and save its `record_id` and `intent`.
@@ -86,7 +86,7 @@ Use the Write tool to save the Evidence text to the output path. Then run the `#
 
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
-$IEDi_BIN add evidence --last \
+$IEDI_BIN add evidence --last \
   --source "session_end_summary" \
   --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
@@ -186,7 +186,7 @@ Run the close command (Evidence was added in Step 3, Provider Insight saved in S
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-$IEDi_BIN close --last \
+$IEDI_BIN close --last \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```

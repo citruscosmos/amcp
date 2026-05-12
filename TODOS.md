@@ -14,7 +14,7 @@
 3. `skills/iedi-end/SKILL.md`, `skills/iedi-capture/SKILL.md`: `~/.claude/skills/iedi-shared/SKILL.md` → `$AMCP_HOME/iedi-shared/SKILL.md`
 4. `skills/iedi-shared/SKILL.md`: 3段階 CLI 検索を `$AMCP_HOME/node_modules/.bin/iedi` 単一パスに置き換え
 5. `skills/iedi-setup/SKILL.md`: `npm link` → `npm install` in `$AMCP_HOME`
-6. `skills/iedi-start/SKILL.md`, `skills/iedi-end/SKILL.md`, `skills/iedi-capture/SKILL.md`: 裸の `iedi` 呼び出し → `$IEDi_BIN`
+6. `skills/iedi-start/SKILL.md`, `skills/iedi-end/SKILL.md`, `skills/iedi-capture/SKILL.md`: 裸の `iedi` 呼び出し → `$IEDI_BIN`
 7. `skills/setup` スクリプト作成（preflight → cleanup → bootstrap → npm install → profile export → skill copy）
 8. `README.md` 更新（setup スクリプトフローに差し替え）
 

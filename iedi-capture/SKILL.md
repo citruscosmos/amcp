@@ -32,11 +32,11 @@ If the Read fails, stop and report the error — do not proceed without the shar
 
 ## CLI & IEDI_DIR Setup
 
-Before any bash command, set AMCP_HOME, IEDi_BIN, and IEDI_DIR:
+Before any bash command, set AMCP_HOME, IEDI_BIN, and IEDI_DIR:
 
 ```bash
 AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
-IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
 IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}/.iedi"
 ```
 
@@ -90,7 +90,7 @@ Infer from category (see `## work_domain Inference Rules` in `$AMCP_HOME/iedi-sh
 ### A-Step 4: Run iedi open
 
 ```bash
-$IEDi_BIN open \
+$IEDI_BIN open \
   --intent "<AUTO_INTENT>" \
   --work-domain <AUTO_DOMAIN>
 ```
@@ -114,7 +114,7 @@ Use the Write tool to save to the output path. Run the `## Encoding Guard` from 
 
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
-$IEDi_BIN add evidence --last \
+$IEDI_BIN add evidence --last \
   --source "session_capture_auto" \
   --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
@@ -175,7 +175,7 @@ Leave as empty string (cannot be auto-generated).
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-$IEDi_BIN close --last \
+$IEDI_BIN close --last \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```
@@ -226,7 +226,7 @@ Stop with "記録可能な会話コンテキストがありません" if ALL of:
 ### Step 1: Check for open record
 
 ```bash
-$IEDi_BIN query --json --limit 3
+$IEDI_BIN query --json --limit 3
 ```
 
 If an `"status": "open"` record exists:
@@ -317,7 +317,7 @@ Save the choice as `SOURCE_MODE`:
 ### Step 6: Run iedi open
 
 ```bash
-$IEDi_BIN open \
+$IEDI_BIN open \
   --intent "<INTENT>" \
   --work-domain <WORK_DOMAIN>
 ```
@@ -344,7 +344,7 @@ Use the Write tool to save. Run the encoding guard (BOM check). Then:
 
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
-$IEDi_BIN add evidence --last \
+$IEDI_BIN add evidence --last \
   --source "session_capture" \
   --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
@@ -442,7 +442,7 @@ Run close (Evidence added in Step 7, Provider Insight saved in Step 9, Delta sav
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-$IEDi_BIN close --last \
+$IEDI_BIN close --last \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```

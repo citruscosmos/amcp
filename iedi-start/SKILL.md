@@ -11,13 +11,26 @@ Start an IEDI record. Select a category from past digests, confirm the intent, a
 
 All file operations must use Bash. Never use PowerShell for file reads/writes — its default UTF-16 LE encoding garbles Japanese text.
 
+## Shared Templates
+
+This skill uses templates defined in `$AMCP_HOME/iedi-shared/SKILL.md`.
+Before inferring work_domain or writing session files, read the following sections
+from `$AMCP_HOME/iedi-shared/SKILL.md` with the Read tool:
+
+- `## CLI Setup` — binary path and prerequisite check
+- `## IEDI_DIR Setup` — IEDI_DIR variable with `:?` guard
+- `## work_domain Inference Rules` — category → work_domain mapping (Step 6)
+- `## Encoding Guard` — BOM check after every Write to sessions/
+
+If the Read fails, stop and report the error — do not proceed without the shared templates.
+
 ## CLI & IEDI_DIR Setup
 
-Before any bash command, set AMCP_HOME, IEDi_BIN, and IEDI_DIR:
+Before any bash command, set AMCP_HOME, IEDI_BIN, and IEDI_DIR:
 
 ```bash
 AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
-IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
 IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}/.iedi"
 ```
 
@@ -117,7 +130,7 @@ work_domain is immutable after record creation. When in doubt, use `internal_tas
 ### Step 7: Run iedi open
 
 ```bash
-$IEDi_BIN open \
+$IEDI_BIN open \
   --intent "<INTENT>" \
   --work-domain <WORK_DOMAIN>
 ```

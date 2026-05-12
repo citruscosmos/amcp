@@ -32,12 +32,12 @@ if ! npm install; then
   exit 1
 fi
 
-IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
-if [ ! -x "$IEDi_BIN" ]; then
-  echo "ERROR: $IEDi_BIN not found after install." >&2
+IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+if [ ! -x "$IEDI_BIN" ]; then
+  echo "ERROR: $IEDI_BIN not found after install." >&2
   exit 1
 fi
-echo "Binary: $IEDi_BIN"
+echo "Binary: $IEDI_BIN"
 
 # ---- Step 3: export AMCP_HOME in shell profile ----
 _SHELL_RC=""
@@ -61,7 +61,7 @@ echo ""
 echo "============================================"
 echo "IEDI setup complete."
 echo "  AMCP_HOME: $AMCP_HOME"
-echo "  Binary:    $IEDi_BIN"
+echo "  Binary:    $IEDI_BIN"
 echo "============================================"
 echo ""
 echo "Next: Restart Claude Code for skills to be discovered."

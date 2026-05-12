@@ -26,15 +26,15 @@ Before any `iedi` command, run this check once:
 
 ```bash
 AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
-IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
 
-if [ ! -x "$IEDi_BIN" ]; then
+if [ ! -x "$IEDI_BIN" ]; then
   echo "CLI: not found — run /iedi-setup to install" >&2
   exit 1
 fi
 ```
 
-Consuming skills (`iedi-start`, `iedi-end`, `iedi-capture`) embed this preamble and use `$IEDi_BIN` for all CLI calls. No other CLI discovery mechanism is valid.
+Consuming skills (`iedi-start`, `iedi-end`, `iedi-capture`) embed this preamble and use `$IEDI_BIN` for all CLI calls. No other CLI discovery mechanism is valid.
 
 ## IEDI_DIR Setup
 

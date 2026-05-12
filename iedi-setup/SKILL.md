@@ -50,9 +50,9 @@ AMCP スキルディレクトリで `iedi` CLI が使用可能か確認する:
 
 ```bash
 AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
-IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
 
-if [ ! -x "$IEDi_BIN" ]; then
+if [ ! -x "$IEDI_BIN" ]; then
   echo "CLI not found — running npm install in $AMCP_HOME..."
   if ! (cd "$AMCP_HOME" && npm install); then
     echo "ERROR: npm install failed" >&2
@@ -61,7 +61,7 @@ if [ ! -x "$IEDi_BIN" ]; then
   fi
 fi
 
-echo "CLI: $IEDi_BIN"
+echo "CLI: $IEDI_BIN"
 ```
 
 `npm install` が失敗する場合は、ビルドツール（`python3`, `gcc`, `make`）と Node.js のバージョンを確認するよう案内する。
