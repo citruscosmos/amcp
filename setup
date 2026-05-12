@@ -33,6 +33,11 @@ if ! npm install; then
 fi
 
 IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+# npm does not create self-referential bin links when installing a package
+# in its own directory — the bin field only takes effect when this package
+# is a dependency of another package.
+ln -sf "$AMCP_HOME/dist/cli/iedi.js" "$IEDI_BIN"
+
 if [ ! -x "$IEDI_BIN" ]; then
   echo "ERROR: $IEDI_BIN not found after install." >&2
   exit 1
