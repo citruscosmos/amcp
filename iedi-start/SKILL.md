@@ -1,21 +1,23 @@
 ---
 name: iedi-start
-description: "Start an IEDI session. Select a category from .iedi/digest/, confirm intent, and run iedi start."
+description: "Start an IEDI session. Select a category from .iedi/digest/, confirm intent, and run iedi open."
 ---
 
 # IEDI Start
 
-Start an IEDI record. Select a category from past digests, confirm the intent, and run `iedi start`.
+Start an IEDI record. Select a category from past digests, confirm the intent, and run `iedi open`.
 
 ## Shell Constraint
 
 All file operations must use Bash. Never use PowerShell for file reads/writes — its default UTF-16 LE encoding garbles Japanese text.
 
-## IEDI_DIR Setup
+## CLI & IEDI_DIR Setup
 
-Before any bash command, set IEDI_DIR from the IEDI_WORKSPACE env var (configured by `/iedi-setup`):
+Before any bash command, set AMCP_HOME, IEDi_BIN, and IEDI_DIR:
 
 ```bash
+AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
+IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
 IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}/.iedi"
 ```
 
@@ -112,10 +114,10 @@ work_domain is immutable after record creation. When in doubt, use `internal_tas
 
 ---
 
-### Step 7: Run iedi start
+### Step 7: Run iedi open
 
 ```bash
-iedi start \
+$IEDi_BIN open \
   --intent "<INTENT>" \
   --work-domain <WORK_DOMAIN>
 ```
@@ -153,7 +155,7 @@ IEDIセッション開始
 ## Notes
 
 - This skill only declares intent. Evidence, Delta, and Insight generation is handled by `/iedi-end`.
-- If an open record already exists, `iedi start` fails with an error (by design). Run `iedi query` to check open records, close with `/iedi-end`, then retry.
+- If an open record already exists, `iedi open` fails with an error (by design). Run `iedi query` to check open records, close with `/iedi-end`, then retry.
 - Starting without a category is fine — free-text intent works without `/iedi-digest` having been run.
 - work_domain cannot be changed later. When uncertain, default to `internal_task`.
 - The `iedi` CLI uses `IEDI_WORKSPACE` env var to locate `.iedi/`. The skill and CLI reference the same DB.

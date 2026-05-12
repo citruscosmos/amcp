@@ -1,5 +1,27 @@
 # TODOS
 
+## T-0: `~/.claude/skills/amcp/` レイアウトへの移行（setup スクリプト）
+
+**What:** `skills/setup` スクリプトを作成し、gstack パターンに従って `~/.claude/skills/amcp/` への統一レイアウト移行を自動化する。
+
+**Design doc:** `~/.gstack/projects/citruscosmos-amcp/citrus-main-design-20260511-130736.md`
+**Review:** `~/.gstack/projects/citruscosmos-amcp/citrus-main-eng-review-20260511.md`
+
+**Subtasks（依存順）:**
+
+1. `package.json` に `"prepare": "tsc"` を追加 — `github:` 依存が動作するための前提条件
+2. `skills/iedi-start/SKILL.md` Step 7: `iedi start` → `iedi open`（deprecated コマンドを呼んでいるバグ）
+3. `skills/iedi-end/SKILL.md`, `skills/iedi-capture/SKILL.md`: `~/.claude/skills/iedi-shared/SKILL.md` → `$AMCP_HOME/iedi-shared/SKILL.md`
+4. `skills/iedi-shared/SKILL.md`: 3段階 CLI 検索を `$AMCP_HOME/node_modules/.bin/iedi` 単一パスに置き換え
+5. `skills/iedi-setup/SKILL.md`: `npm link` → `npm install` in `$AMCP_HOME`
+6. `skills/iedi-start/SKILL.md`, `skills/iedi-end/SKILL.md`, `skills/iedi-capture/SKILL.md`: 裸の `iedi` 呼び出し → `$IEDi_BIN`
+7. `skills/setup` スクリプト作成（preflight → cleanup → bootstrap → npm install → profile export → skill copy）
+8. `README.md` 更新（setup スクリプトフローに差し替え）
+
+**Depends on:** 特になし。これが最優先タスク。
+
+---
+
 ## T-1: DB マイグレーション戦略の定義
 
 **What:** `~/.iedi/records.db` のスキーマ変更（v0.3 以降）に対するマイグレーション手順を定義する。
@@ -60,7 +82,7 @@
 
 **Context:** Vitest で `execa` や `child_process.execSync` を使い、テスト用の `:memory:` 相当の一時 DB パスを `IEDI_DB_PATH` 環境変数で注入するパターンが有力。
 
-**Depends on:** T-4 は `--insight-provider` / `--insight-requester` 実装完了後（現在の実装タスク完了後に着手可能）。
+**Depends on:** 実装完了済み。CLI → store の結合経路テスト（`--insight-requester` の CLI 呼び出しレベル）のみ未カバー。/plan-eng-review で確認済み。
 
 ---
 

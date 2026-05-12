@@ -44,21 +44,47 @@ pwd
 
 ---
 
-### Step 2.5: iedi CLI の有効化 (npm link)
+### Step 2.5: iedi CLI のインストール (npm install)
 
-iedi CLI を `npm link` でグローバルに利用可能にする。
+AMCP スキルディレクトリで `npm install` を実行し、`iedi` CLI をインストールする。
 
-開発ディレクトリ（`node_modules` が存在する場所）で以下を実行する:
 ```bash
-npm link
+AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
+
+# package.json が存在しない場合は bootstrap
+if [ ! -f "$AMCP_HOME/package.json" ]; then
+  echo "Bootstrapping $AMCP_HOME..."
+  mkdir -p "$AMCP_HOME"
+  cat > "$AMCP_HOME/package.json" << 'PKGJSON'
+{
+  "name": "amcp-skills",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AMCP/IEDI skills and CLI for Claude Code",
+  "dependencies": {
+    "iedi": "github:citruscosmos/amcp"
+  }
+}
+PKGJSON
+fi
+
+echo "Installing iedi CLI in $AMCP_HOME..."
+if ! (cd "$AMCP_HOME" && npm install); then
+  echo "ERROR: npm install failed" >&2
+  echo "Check: build tools (python3, gcc, make), network, GitHub SSH key" >&2
+  exit 1
+fi
+
+IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+if [ ! -x "$IEDi_BIN" ]; then
+  echo "ERROR: $IEDi_BIN not found after install" >&2
+  exit 1
+fi
+
+echo "CLI installed: $IEDi_BIN"
 ```
 
-すでにリンク済みか確認するには:
-```bash
-which iedi
-```
-
-`npm link` が失敗する場合（権限エラー等）は、エラーメッセージを表示してユーザーに手動実行を案内する。
+`npm install` が失敗する場合は、ビルドツール（`python3`, `gcc`, `make`）と GitHub SSH キーを確認するよう案内する。
 
 ---
 

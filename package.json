@@ -7,6 +7,7 @@
     "iedi": "dist/cli/iedi.js"
   },
   "scripts": {
+    "prepare": "tsc",
     "dev": "tsx src/cli/iedi.ts",
     "build": "tsc",
     "test": "vitest run",

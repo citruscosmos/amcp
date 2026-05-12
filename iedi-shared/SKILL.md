@@ -18,41 +18,23 @@ The `Write` tool writes UTF-8 — keep the entire pipeline in Bash to preserve e
 
 ---
 
-## CLI Availability
+## CLI Setup
 
-Before running any `iedi` command, verify the CLI is available. Run this check once at the start of each skill:
+All IEDI skills use a single predictable binary path. No more `which iedi` / `npm link` / `npx tsx` fallback.
+
+Before any `iedi` command, run this check once:
 
 ```bash
-if command -v iedi >/dev/null 2>&1; then
-  echo "CLI: iedi (global)"
-else
-  # Search for the CLI source — check common locations
-  for _DIR in "$HOME/dev/amcp" "$HOME/projects/amcp"; do
-    if [ -f "$_DIR/src/cli/iedi.ts" ]; then
-      echo "CLI_SOURCE: $_DIR"
-      break
-    fi
-  done
+AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
+IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+
+if [ ! -x "$IEDi_BIN" ]; then
+  echo "CLI: not found — run /iedi-setup to install" >&2
+  exit 1
 fi
 ```
 
-**If `command -v iedi` succeeds:** use `iedi` directly for all commands.
-
-**If `iedi` is not found but `CLI_SOURCE` is set:**
-```bash
-cd "$CLI_SOURCE" && npm link 2>&1
-```
-Then use `iedi` directly. If `npm link` fails (permissions, etc.), fall back to running the source directly:
-```bash
-npx tsx "$CLI_SOURCE/src/cli/iedi.ts" <subcommand> <args...>
-```
-
-**If neither `iedi` nor the source is found:**
-> `iedi` CLI が見つかりません。`/iedi-setup` を実行して CLI をリンクしてください。
-
-Stop.
-
-**CRITICAL:** Never run `npx tsx` against a file found via Grep/Glob search. Only use the pre-verified `CLI_SOURCE` path from the check above. This prevents accidentally running a different project's `iedi.ts`.
+Consuming skills (`iedi-start`, `iedi-end`, `iedi-capture`) embed this preamble and use `$IEDi_BIN` for all CLI calls. No other CLI discovery mechanism is valid.
 
 ## IEDI_DIR Setup
 

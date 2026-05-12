@@ -13,16 +13,26 @@ All file operations must use Bash. Never use PowerShell for file reads/writes �
 
 ## Shared Templates
 
-This skill uses templates defined in `~/.claude/skills/iedi-shared/SKILL.md`.
-**Before generating Evidence (Step 3), Delta (Step 4), or Provider Insight (Step 5):**
-Read `~/.claude/skills/iedi-shared/SKILL.md` with the Read tool and use the block templates, rules, and validation commands defined there.
-If the Read fails, fall back to the inline template descriptions in each step below.
+This skill uses templates defined in `$AMCP_HOME/iedi-shared/SKILL.md`.
+Before generating Evidence, Delta, or Provider Insight, read the following sections
+from `$AMCP_HOME/iedi-shared/SKILL.md` with the Read tool:
 
-## IEDI_DIR Setup
+- `## Evidence Item Block Template` — block format, rules, source values
+- `## Decision Block Template (Delta)` — block format, rules for Chosen/Rejected
+- `## Intervention Block Template (Provider Insight)` — block format, confidence rubric
+- `## Provider Insight 4-Section Structure` — 4-section output structure
+- `## Encoding Guard` — BOM check after every Write to sessions/
+- `## Template Validation (grep)` — grep commands to validate generated blocks
 
-Before any bash command, set:
+If the Read fails, stop and report the error — do not proceed without the shared templates.
+
+## CLI & IEDI_DIR Setup
+
+Before any bash command, set AMCP_HOME, IEDi_BIN, and IEDI_DIR:
 
 ```bash
+AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
+IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
 IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}/.iedi"
 ```
 
@@ -31,7 +41,7 @@ IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}
 ### Step 1: Check for open record
 
 ```bash
-iedi query --json --limit 5
+$IEDi_BIN query --json --limit 5
 ```
 
 Find the record with `"status": "open"` and save its `record_id` and `intent`.
@@ -56,16 +66,7 @@ Save the response as `USER_SUMMARY`.
 
 Review the full conversation (from session start or `/iedi-start` onwards). Generate one `### Evidence Item N` block per independent unit of work.
 
-Use the Evidence Item template from `~/.claude/skills/iedi-shared/SKILL.md`.
-If the shared file is unavailable, use this template:
-
-```markdown
-### Evidence Item 1
-- **Did:** [action taken — specific tools, commands, approach]
-- **Result:** [outcome — what succeeded, what was confirmed]
-- **Files:** [files changed and summary of changes]
-- **Outcome:** [one-line verifiable result]
-```
+Use the `## Evidence Item Block Template` section from `$AMCP_HOME/iedi-shared/SKILL.md`.
 
 **Rules:**
 - Rejected/failed approaches go to Delta (Chosen/Rejected), not Evidence. Evidence is observation only.
@@ -81,11 +82,11 @@ mkdir -p "$IEDI_DIR/sessions"
 echo "$IEDI_DIR/sessions/evidence.md"
 ```
 
-Use the Write tool to save the Evidence text to the output path. Then run the encoding guard from `~/.claude/skills/iedi-shared/SKILL.md` (BOM check). After verification:
+Use the Write tool to save the Evidence text to the output path. Then run the `## Encoding Guard` from `$AMCP_HOME/iedi-shared/SKILL.md`. After verification:
 
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
-iedi add evidence --last \
+$IEDi_BIN add evidence --last \
   --source "session_end_summary" \
   --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
@@ -104,15 +105,7 @@ Review user decisions and choices made during the session. Generate one `### Dec
 - User provided context, constraints, or authorization information
 - User made a final approval with meaningful choice
 
-Use the Decision block template from `~/.claude/skills/iedi-shared/SKILL.md`.
-If the shared file is unavailable, use this template:
-
-```markdown
-### Decision 1
-- **Chosen:** [decision adopted]
-- **Rejected:** [alternative rejected, or "(none — no alternatives considered)"]
-- **Reason:** [why Chosen was better than Rejected]
-```
+Use the `## Decision Block Template (Delta)` section from `$AMCP_HOME/iedi-shared/SKILL.md`.
 
 **Rules:**
 - Only include decisions where user explicitly chose between alternatives
@@ -136,29 +129,8 @@ Wait for the user's response, then finalize the Delta text.
 
 ### Step 5: Generate and confirm Provider Insight
 
-Generate Provider Insight using the 4-section structure from `~/.claude/skills/iedi-shared/SKILL.md`.
+Generate Provider Insight using the `## Intervention Block Template (Provider Insight)` and `## Provider Insight 4-Section Structure` sections from `$AMCP_HOME/iedi-shared/SKILL.md`.
 Base every intervention on actual session events — do not fabricate.
-
-If the shared file is unavailable, use this structure:
-
-**Intervention blocks** (`### Intervention N`):
-```markdown
-### Intervention 1
-- **Description:** [what decision required intervention]
-- **Verdict:** [used | rejected]
-- **Confidence:** [+0.1 | +0.3 | +0.5 | -0.1]
-- **Reason:** [why model could not decide alone]
-```
-
-Confidence rubric: +0.1 = minor fix (wording), +0.3 = approach correction, +0.5 = model was fundamentally wrong, -0.1 = user choice may be worse than model proposal.
-
-**4 sections:**
-1. `## 介入ポイント` — `### Intervention N` blocks
-2. `## 自律実行に必要だったもの` — domain knowledge, authority/policy, external data
-3. `## 次回の自動化可能性` — interventions learnable/rule-able for future sessions
-4. `## 本質的な人間判断（自動化不可）` — final decisions, ethics, stakeholder coordination
-
-Confidence values are subjective. Recalibrate after 50 records.
 
 Show the generated content and ask:
 > Provider Insight を表示しました。追加・修正があれば教えてください。問題なければ「OK」で続けます。
@@ -177,30 +149,7 @@ Use the Write tool to save to the output path. Run the encoding guard.
 
 ### Step 5.5: Template validation
 
-Run the validation grep commands from `~/.claude/skills/iedi-shared/SKILL.md`.
-
-If the shared file is unavailable:
-
-```bash
-IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
-EVIDENCE_FILE="$IEDI_DIR/sessions/evidence.md"
-DELTA_FILE="$IEDI_DIR/sessions/delta.txt"
-PROVIDER_FILE="$IEDI_DIR/sessions/provider-insight.md"
-
-# Evidence: block presence
-grep -q '^### Evidence Item [0-9]\+$' "$EVIDENCE_FILE" || echo "MISSING: Evidence Item blocks"
-
-# Delta: block presence + required fields
-grep -q '^### Decision [0-9]\+$' "$DELTA_FILE" || echo "MISSING: Decision blocks"
-grep -q '^- \*\*Chosen:\*\*' "$DELTA_FILE" || echo "MISSING: Chosen field"
-grep -q '^- \*\*Rejected:\*\*' "$DELTA_FILE" || echo "MISSING: Rejected field"
-grep -q '^- \*\*Reason:\*\*' "$DELTA_FILE" || echo "MISSING: Reason field"
-
-# Provider Insight: block structure + required fields
-grep -q '^### Intervention [0-9]\+$' "$PROVIDER_FILE" || echo "MISSING: Intervention blocks"
-grep -q '^- \*\*Verdict:\*\*' "$PROVIDER_FILE" || echo "MISSING: Verdict field"
-grep -q '^- \*\*Confidence:\*\*' "$PROVIDER_FILE" || echo "MISSING: Confidence field"
-```
+Run the `## Template Validation (grep)` commands from `$AMCP_HOME/iedi-shared/SKILL.md`.
 
 **If validation fails** (`MISSING:` output appears):
 1. Note the specific missing fields/blocks
@@ -237,7 +186,7 @@ Run the close command (Evidence was added in Step 3, Provider Insight saved in S
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-iedi close --last \
+$IEDi_BIN close --last \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```

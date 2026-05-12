@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---- bootstrap defaults (solves AMCP_HOME chicken-and-egg) ----
+AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
+SKILLS=("iedi-setup" "iedi-start" "iedi-end" "iedi-capture" "iedi-shared")
+
+echo "============================================"
+echo " IEDI / AMCP Setup"
+echo "============================================"
+echo ""
+
+# ---- Step 1: preflight (build tools for better-sqlite3) ----
+echo "==> Checking build tools for better-sqlite3..."
+MISSING=""
+command -v python3 >/dev/null 2>&1 || MISSING="$MISSING python3"
+command -v gcc >/dev/null 2>&1 || command -v cc >/dev/null 2>&1 || MISSING="$MISSING cc/gcc"
+command -v make >/dev/null 2>&1 || MISSING="$MISSING make"
+if [ -n "$MISSING" ]; then
+  echo "ERROR: Missing build tools:$MISSING" >&2
+  echo "Install them first:" >&2
+  echo "  Ubuntu/Debian: sudo apt install build-essential python3" >&2
+  echo "  macOS:         xcode-select --install" >&2
+  echo "  Fedora:        sudo dnf install gcc-c++ make python3" >&2
+  exit 1
+fi
+echo "Build tools: OK"
+
+# ---- Step 2: cleanup old flat skill directories ----
+echo "==> Cleaning up old skill directories..."
+for _DIR in iedi-setup iedi-start iedi-end iedi-capture iedi-shared; do
+  if [ -d "$HOME/.claude/skills/$_DIR" ]; then
+    echo "Removing old: $HOME/.claude/skills/$_DIR"
+    rm -rf "$HOME/.claude/skills/$_DIR"
+  fi
+done
+
+# ---- Step 3: bootstrap amcp directory ----
+echo "==> Bootstrapping $AMCP_HOME..."
+mkdir -p "$AMCP_HOME"
+
+# Write package.json if it doesn't exist
+if [ ! -f "$AMCP_HOME/package.json" ]; then
+  cat > "$AMCP_HOME/package.json" << 'PKGJSON'
+{
+  "name": "amcp-skills",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AMCP/IEDI skills and CLI for Claude Code",
+  "dependencies": {
+    "iedi": "github:citruscosmos/amcp"
+  }
+}
+PKGJSON
+  echo "Created: $AMCP_HOME/package.json"
+fi
+
+# ---- Step 4: npm install (compiles better-sqlite3, links iedi binary) ----
+echo "==> Installing iedi CLI..."
+if ! (cd "$AMCP_HOME" && npm install); then
+  echo "ERROR: npm install failed in $AMCP_HOME" >&2
+  echo "Check: network connectivity, disk space, GitHub SSH key, and directory permissions" >&2
+  exit 1
+fi
+IEDi_BIN="$AMCP_HOME/node_modules/.bin/iedi"
+if [ ! -x "$IEDi_BIN" ]; then
+  echo "ERROR: $IEDi_BIN not found after install. Check that the main repo has 'prepare: tsc' in package.json." >&2
+  exit 1
+fi
+echo "Binary: $IEDi_BIN"
+
+# ---- Step 5: export AMCP_HOME in shell profile ----
+_SHELL_RC=""
+case "$SHELL" in
+  */zsh) _SHELL_RC="$HOME/.zshrc" ;;
+  */bash) _SHELL_RC="$HOME/.bashrc" ;;
+  */fish) _SHELL_RC="$HOME/.config/fish/config.fish" ;;
+  *) _SHELL_RC="" ;;
+esac
+if [ -n "$_SHELL_RC" ] && ! grep -q "AMCP_HOME" "$_SHELL_RC" 2>/dev/null; then
+  echo "" >> "$_SHELL_RC"
+  echo "# IEDI/AMCP skill directory" >> "$_SHELL_RC"
+  echo "export AMCP_HOME=\"$AMCP_HOME\"" >> "$_SHELL_RC"
+  echo "Exported AMCP_HOME in $_SHELL_RC — restart your shell or source it to activate."
+elif [ -z "$_SHELL_RC" ]; then
+  echo "Unknown shell ($SHELL). Add this line manually to your shell config:"
+  echo "  export AMCP_HOME=\"$AMCP_HOME\""
+fi
+
+# ---- Step 6: copy skill files into amcp directory ----
+echo "==> Installing skill files..."
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ "$_SCRIPT_DIR" = "$AMCP_HOME" ]; then
+  echo "Repo is already at AMCP_HOME — skipping file copy."
+else
+  for _SKILL in "${SKILLS[@]}"; do
+    if [ -d "$_SCRIPT_DIR/$_SKILL" ]; then
+      mkdir -p "$AMCP_HOME/$_SKILL"
+      cp "$_SCRIPT_DIR/$_SKILL/SKILL.md" "$AMCP_HOME/$_SKILL/SKILL.md"
+      echo "Installed: $AMCP_HOME/$_SKILL/SKILL.md"
+    else
+      echo "WARNING: skill source not found: $_SCRIPT_DIR/$_SKILL (skipping)"
+    fi
+  done
+fi
+
+# Write top-level SKILL.md (routes to sub-skills)
+if [ ! -f "$AMCP_HOME/SKILL.md" ]; then
+  if [ -f "$_SCRIPT_DIR/SKILL.md" ] && [ "$_SCRIPT_DIR" != "$AMCP_HOME" ]; then
+    cp "$_SCRIPT_DIR/SKILL.md" "$AMCP_HOME/SKILL.md"
+    echo "Installed: $AMCP_HOME/SKILL.md"
+  else
+    cat > "$AMCP_HOME/SKILL.md" << 'SKILLMD'
+---
+name: amcp
+description: "AMCP/IEDI skills — IEDI record logging for Claude Code"
+---
+
+# AMCP / IEDI
+
+Available sub-skills:
+- `/iedi-setup` — configure IEDI_WORKSPACE, install the iedi CLI
+- `/iedi-start` — start an IEDI session
+- `/iedi-end` — end an IEDI session
+- `/iedi-capture` — backfill a past session
+SKILLMD
+    echo "Created: $AMCP_HOME/SKILL.md"
+  fi
+fi
+
+echo ""
+echo "============================================"
+echo "IEDI setup complete."
+echo "  AMCP_HOME: $AMCP_HOME"
+echo "  Binary:    $IEDi_BIN"
+echo "============================================"
+echo ""
+echo "Next: Restart Claude Code for skills to be discovered."

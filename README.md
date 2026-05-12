@@ -19,25 +19,26 @@ The project is in early development. We are implementing the IEDI work-record st
 - Node.js 20+
 - Claude Code
 
-### 1. Install the IEDI CLI
+### 1. Clone and run setup
 
 ```bash
 git clone https://github.com/citruscosmos/amcp.git
 cd amcp
 npm install
-npm run build
-npm link    # makes `iedi` available globally
+./setup
 ```
 
-### 2. Install Claude Code skills
+The setup script:
+- Checks build tools (`python3`, `gcc`, `make`) for `better-sqlite3`
+- Cleans up old `~/.claude/skills/iedi-*` directories
+- Creates `~/.claude/skills/amcp/` with the unified skill layout
+- Installs the `iedi` CLI via `npm install` (compiles native addon, links binary)
+- Exports `AMCP_HOME` in your shell profile
+- Copies all skill files into place
 
-```bash
-mkdir -p ~/.claude/skills
-cp -r skills/iedi-setup ~/.claude/skills/
-cp -r skills/iedi-start ~/.claude/skills/
-cp -r skills/iedi-end ~/.claude/skills/
-cp -r skills/iedi-capture ~/.claude/skills/
-```
+### 2. Restart Claude Code
+
+Restart Claude Code so it discovers the new skill paths. All IEDI skills (`/iedi-setup`, `/iedi-start`, `/iedi-end`, `/iedi-capture`) become available.
 
 ### 3. Configure your workspace
 
@@ -47,7 +48,7 @@ In Claude Code, run:
 /iedi-setup
 ```
 
-This sets `IEDI_WORKSPACE` so records are stored in `.iedi/` within your project.
+This sets `IEDI_WORKSPACE` so records are stored in `.iedi/` within your project. The `/iedi-setup` skill will also verify that the `iedi` CLI is installed correctly.
 
 ### 4. Usage flow
 
@@ -68,10 +69,14 @@ To retroactively record a past session:
 
 ### Manual CLI usage
 
+The `iedi` binary is at `$AMCP_HOME/node_modules/.bin/iedi` (default: `~/.claude/skills/amcp/node_modules/.bin/iedi`).
+
 ```bash
-iedi query
-iedi open --intent "task description"
-iedi close --last --delta "decisions" --insight-provider "model" --insight-requester "user"
+# If AMCP_HOME is exported in your shell profile:
+"$AMCP_HOME/node_modules/.bin/iedi" query
+"$AMCP_HOME/node_modules/.bin/iedi" open --intent "task description"
+"$AMCP_HOME/node_modules/.bin/iedi" close --last --delta "decisions" \
+  --insight-provider "model" --insight-requester "user"
 ```
 
 ## License

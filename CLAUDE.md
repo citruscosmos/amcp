@@ -21,6 +21,16 @@ MCP に準拠したプロファイル。
 - IEDI過去セッション記録    → /iedi-capture
 - IEDI知識ドキュメント生成  → /iedi-digest
 
+## Web検索のフォールバック
+
+WebSearch がモデル互換性の問題で失敗した場合（400エラー等）、以下のフォールバックを使用する。
+
+1. DuckDuckGo のHTML検索を WebFetch で取得:
+   ```
+   https://html.duckduckgo.com/html/?q=<URLエンコード済みキーワード>
+   ```
+2. 検索結果ページから関連URLを抽出し、必要なページを WebFetch で詳細取得する。
+
 ## 注意
 - /plan-design-review は本プロジェクトでは使用しない
   （プロトコル仕様・サーバー実装のため）
