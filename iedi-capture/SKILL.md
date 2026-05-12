@@ -29,9 +29,9 @@ If the Read fails, stop — do not proceed without the shared templates.
 Execute all phases from iedi-shared in order. Use `##### auto` subsections when `--auto` is set,
 default instructions otherwise.
 
-### Phase 1: Open (O1–O8)
+### Phase 1: Open (O1–O7)
 
-Execute O1–O6 (digest check → category → intent → work_domain).
+Execute O1–O5 (digest check → category → intent).
 
 **Session information source (interactive only — skip if `--auto`):**
 
@@ -46,11 +46,11 @@ Ask:
 - `[2][3][4]` → `SOURCE_MODE=notes` (user-provided). Save input as `SESSION_NOTES`.
   If `[3]`, read the file with Read tool. If notes are sparse, note: "情報が限られているため要約の精度が低い可能性があります".
 
-Continue with O7–O8 (`iedi open` → record).
+Continue with O6–O7 (`iedi open` → record).
 
 ### Phase 2: Evidence (E1–E3)
 
-- **E1 is skipped** (record was just opened in O7)
+- **E1 is skipped** (record was just opened in O6)
 - **E2:** Generate Evidence from context (`SOURCE_MODE=context` / `--auto`) or `SESSION_NOTES` (`SOURCE_MODE=notes`)
 - **E3:** Save and add evidence. Source: `--auto` → `session_capture_auto`, interactive → `session_capture`
 

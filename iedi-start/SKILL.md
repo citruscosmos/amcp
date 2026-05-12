@@ -10,17 +10,17 @@ Start an IEDI record. Select a category from past digests, confirm the intent, a
 ## Shared Templates
 
 Before proceeding, read `$AMCP_HOME/iedi-shared/SKILL.md` in full with the Read tool.
-This skill executes Phase 1 (Steps O1–O8) of the canonical flow defined there.
+This skill executes Phase 1 (Steps O1–O7) of the canonical flow defined there.
 
 Key sections referenced:
 - `## Pre-flight: CLI & IEDI_DIR Setup` — binary path, prerequisite check, IEDI_DIR
-- `## Canonical Flow` → `### Phase 1: Open` — Steps O1–O8
+- `## Canonical Flow` → `### Phase 1: Open` — Steps O1–O7
 
 If the Read fails, stop and report the error — do not proceed without the shared templates.
 
 ## Instructions
 
-Execute Phase 1 (Steps O1–O8) from `$AMCP_HOME/iedi-shared/SKILL.md` in order,
+Execute Phase 1 (Steps O1–O7) from `$AMCP_HOME/iedi-shared/SKILL.md` in order,
 following the **default instructions** (not the `##### auto` subsections).
 
 1. **O1:** Check for digest files
@@ -28,16 +28,14 @@ following the **default instructions** (not the `##### auto` subsections).
 3. **O3:** Category selection
 4. **O4:** Show intent pattern examples (skip if O3 was new category)
 5. **O5:** Confirm intent
-6. **O6:** Infer work_domain
-7. **O7:** Run `iedi open`
-8. **O8:** Record and report
+6. **O6:** Run `iedi open`
+7. **O7:** Record and report
 
 ### Skill-specific notes
 
 - Starting without a category is fine — free-text intent works without `/iedi-digest` having been run (O1 handles this with fallback to direct intent input)
 - This skill only declares intent. Evidence, Delta, and Insight generation is handled by `/iedi-end`
 - If an open record already exists, `iedi open` fails with an error (by design). Run `iedi query` to check, close with `/iedi-end`, then retry
-- work_domain cannot be changed later. When uncertain, default to `internal_task`
 
 ## Notes
 

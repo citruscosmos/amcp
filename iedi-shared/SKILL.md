@@ -101,7 +101,7 @@ Wait for the response.
 
 ##### auto
 - **Preconditions:** `--auto` flag is present
-- **Behavior:** If `--category <name>` flag is provided, use it as the category. Otherwise, default to `internal_task` and proceed to O6.
+- **Behavior:** If `--category <name>` flag is provided, use it as the category. Otherwise, default to `internal_task` and proceed to O5.
 - **Fallback:** If no `--category` and category cannot be inferred from context, use `internal_task` as default.
 
 #### Step O4: Show intent pattern examples
@@ -132,42 +132,22 @@ Use the user's response as the intent string.
 - **Behavior:** Infer intent from conversation context. Priority: (1) most recent task instruction with action verbs (修正, 作成, 追加, 削除, 変更, 実装, fix, add, create, remove, change, implement) from last 5 user messages, (2) overall session theme as one-line summary, (3) first user message as fallback.
 - **Fallback:** If no intent can be inferred with confidence, stop and report — "intent を自動推論できませんでした。対話モードで実行してください。"
 
-#### Step O6: Infer work_domain
-
-Infer from category and intent (no need to ask the user):
-
-| Category pattern | work_domain |
-|---|---|
-| `legal-*`, `backoffice-*`, `external-*` | `external_transaction` |
-| `coding-*`, `design-*` | `internal_task` |
-| Primary purpose is decision-making | `decision` |
-| Reflection / retrospective | `retrospective` |
-| Uncertain | `internal_task` (default) |
-
-work_domain is immutable after record creation. When in doubt, use `internal_task`.
-
-##### auto
-- **Preconditions:** Category and intent are available (from O3/O5 auto or provided)
-- **Behavior:** Apply the same inference rules above. Category → work_domain mapping is deterministic.
-- **Fallback:** If both category and intent are missing, default to `internal_task`.
-
-#### Step O7: Run iedi open
+#### Step O6: Run iedi open
 
 ```bash
 $IEDI_BIN open \
-  --intent "<INTENT>" \
-  --work-domain <WORK_DOMAIN>
+  --intent "<INTENT>"
 ```
 
-Replace `<INTENT>` and `<WORK_DOMAIN>` with actual values.
+Replace `<INTENT>` with the actual intent value.
 If the CLI exits non-zero (e.g., open record already exists), display the error and stop.
 
 ##### auto
-- **Preconditions:** Intent (from O5 auto or `--intent` flag) and work_domain (from O6) are available
+- **Preconditions:** Intent (from O5 auto or `--intent` flag) is available
 - **Behavior:** Same CLI command as default. If CLI exits non-zero because an open record exists, stop with: "現在 open のIEDIレコードがあります。`/iedi-end` で閉じてから再実行してください。"
 - **Fallback:** Stop and report the CLI error.
 
-#### Step O8: Record and report
+#### Step O7: Record and report
 
 Extract `record_id` from the CLI output.
 
@@ -183,14 +163,13 @@ IEDIセッション開始
   record_id: {record_id}
   intent:    {intent}
   category:  {category}
-  domain:    {work_domain}
   iedi_dir:  {IEDI_DIR}
 
 セッション終了時は /iedi-end を実行してください。
 ```
 
 ##### auto
-- **Preconditions:** `record_id` obtained from O7 output
+- **Preconditions:** `record_id` obtained from O6 output
 - **Behavior:** Same as default. Write `record_id` to aux file quietly.
 - **Fallback:** If `record_id` extraction fails, stop and report.
 
@@ -609,5 +588,4 @@ grep -q '^- \*\*Confidence:\*\*' "$PROVIDER_FILE" || echo "MISSING: Confidence f
 - Long text must not be passed directly as CLI arguments. Save to `$IEDI_DIR/sessions/` and use `$(cat <file>)`.
 - Windows command-line length limit: ~8191 chars (cmd.exe). If `$(cat ...)` expansion fails, reduce Delta block count.
 - `iedi` CLI uses `IEDI_WORKSPACE` env var to locate `.iedi/`. Skills and CLI must reference the same DB.
-- work_domain is immutable after record creation. When in doubt, use `internal_task`.
 - If an open record already exists, `iedi open` fails with an error (by design).
