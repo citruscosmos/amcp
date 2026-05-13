@@ -3,7 +3,6 @@ import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { Command, Option } from 'commander';
 import { IediStore } from '../storage/iedi-store.js';
-import type { WorkDomain } from '../storage/iedi-store.js';
 
 // Prevent ugly EPIPE stack trace when output is piped (e.g. iedi query --json | head)
 process.stdout.on('error', (err) => {
@@ -67,7 +66,6 @@ program
   .command('open')
   .description('Open a new IEDI record (errors if an open record already exists)')
   .requiredOption('-i, --intent <text>', 'Pre-declared intent statement')
-  .addOption(new Option('-d, --work-domain <type>', 'Work domain').choices(['internal_task', 'external_transaction', 'decision', 'retrospective']).default('internal_task'))
   .option('-t, --tool-called <name>', 'Tool or service identifier (e.g. coding_session)')
   .action((opts) => {
     checkWorkspace();
@@ -82,11 +80,9 @@ program
       }
       const record = store.openRecord({
         intent: opts.intent as string,
-        work_domain: opts.workDomain as WorkDomain,
         tool_called: opts.toolCalled as string | undefined,
       });
       console.log(`Record opened: ${record.record_id}`);
-      console.log(`  work_domain: ${record.work_domain}`);
       console.log(`  mode:        ${record.mode_used}`);
       console.log(`  intent:      ${record.intent}`);
     } catch (err) {
@@ -243,7 +239,6 @@ program
 program
   .command('query')
   .description('List IEDI records')
-  .option('--work-domain <type>', 'Filter by work domain')
   .option('--limit <n>', 'Maximum records to show', '20')
   .option('--json', 'Output raw JSON')
   .action((opts) => {
@@ -256,7 +251,6 @@ program
         process.exit(1);
       }
       const records = store.listRecords({
-        work_domain: opts.workDomain as WorkDomain | undefined,
         limit: parsedLimit,
       });
 
@@ -276,7 +270,7 @@ program
           r.status === 'completed' ? 'v' :
           r.status === 'open'      ? '*' :
           r.status === 'failed'    ? 'x' : '-';
-        console.log(`[${icon}] [${r.work_domain}] ${r.record_id}  ${date}`);
+        console.log(`[${icon}] ${r.record_id}  ${date}`);
         console.log(`    intent:  ${r.intent}`);
         if (r.delta) console.log(`    delta:   ${r.delta}`);
         if (r.insight?.provider) console.log(`    insight: ${r.insight.provider}`);

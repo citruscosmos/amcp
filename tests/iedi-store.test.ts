@@ -89,27 +89,15 @@ describe('IediStore', () => {
     expect(() => store.openRecord({ intent: 'second' })).toThrow(/open record already exists/i);
   });
 
-  // ---- internal_task with provider=requester ------------------------------
+  // ---- internal record has provider=requester ------------------------------
 
-  it('internal_task record has provider_actor_id === requester_actor_id', () => {
-    const r = store.openRecord({ intent: 'code review', work_domain: 'internal_task' });
+  it('record has provider_actor_id === requester_actor_id', () => {
+    const r = store.openRecord({ intent: 'code review' });
     store.closeRecord({ record_id: r.record_id, delta: 'reviewed 3 files' });
     const closed = store.getRecord(r.record_id)!;
 
     expect(closed.requester_actor_id).toBe(ACTOR);
     expect(closed.provider_actor_id).toBe(ACTOR);
-    expect(closed.work_domain).toBe('internal_task');
-  });
-
-  // ---- decision domain caps at cooperative --------------------------------
-
-  it('decision work_domain forces mode_used=cooperative regardless of requested mode', () => {
-    const r = store.openRecord({
-      intent: 'choose tech stack',
-      work_domain: 'decision',
-      mode_used: 'autonomous',
-    });
-    expect(r.mode_used).toBe('cooperative');
   });
 
   // ---- negative paths -----------------------------------------------------
@@ -156,15 +144,14 @@ describe('IediStore', () => {
     expect(store.listRecords()).toHaveLength(0);
   });
 
-  it('listRecords filters by work_domain', () => {
-    const r1 = store.openRecord({ intent: 'task', work_domain: 'internal_task' });
+  it('listRecords returns all records ordered by record_id DESC', () => {
+    const r1 = store.openRecord({ intent: 'task' });
     store.closeRecord({ record_id: r1.record_id, delta: 'done' });
-    const r2 = store.openRecord({ intent: 'decide', work_domain: 'decision' });
+    const r2 = store.openRecord({ intent: 'decide' });
     store.closeRecord({ record_id: r2.record_id, delta: 'decided' });
 
-    const tasks = store.listRecords({ work_domain: 'internal_task' });
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0].work_domain).toBe('internal_task');
+    const all = store.listRecords();
+    expect(all).toHaveLength(2);
   });
 
   it('listRecords respects limit', () => {

@@ -1,13 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/citruscosmos/amcp/spec/iedi-record-v0.2.json",
-  "title": "IEDI Record v0.2-draft",
-  "description": "AMCP IEDI (Intent/Evidence/Delta/Insight) record schema. v0.2-draft adds work_domain and natural-language delta over v0.1.",
+  "$id": "https://github.com/citruscosmos/amcp/spec/iedi-record.json",
+  "title": "IEDI Record v0.3",
+  "description": "AMCP IEDI (Intent/Evidence/Delta/Insight) record schema. v0.3 removes work_domain (redundant with category system).",
   "type": "object",
   "required": [
     "record_id",
     "schema_version",
-    "work_domain",
     "requester_actor_id",
     "provider_actor_id",
     "mode_used",
@@ -25,12 +24,7 @@
     },
     "schema_version": {
       "type": "string",
-      "const": "0.2-draft"
-    },
-    "work_domain": {
-      "type": "string",
-      "enum": ["external_transaction", "internal_task", "decision", "retrospective"],
-      "description": "external_transaction: requester≠provider; internal_task/decision/retrospective: provider_actor_id=requester_actor_id"
+      "const": "0.3"
     },
     "tool_called": {
       "type": ["string", "null"],
@@ -47,7 +41,7 @@
     "mode_used": {
       "type": "string",
       "enum": ["autonomous", "cooperative", "delegated"],
-      "description": "Execution mode. decision work_domain caps at cooperative."
+      "description": "Execution mode: autonomous (no human intervention), cooperative (human-in-the-loop), delegated (human-augmented execution)."
     },
     "status": {
       "type": "string",

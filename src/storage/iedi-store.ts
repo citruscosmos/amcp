@@ -8,12 +8,6 @@ import { canonicalize } from 'json-canonicalize';
 
 // ---- Types ----------------------------------------------------------------
 
-export type WorkDomain =
-  | 'external_transaction'
-  | 'internal_task'
-  | 'decision'
-  | 'retrospective';
-
 export type ModeUsed = 'autonomous' | 'cooperative' | 'delegated';
 
 export type Status = 'open' | 'completed' | 'failed' | 'cancelled';
@@ -32,7 +26,6 @@ export interface Insight {
 export interface IediRecord {
   record_id: string;
   schema_version: string;
-  work_domain: WorkDomain;
   tool_called: string | null;
   requester_actor_id: string;
   provider_actor_id: string;
@@ -51,7 +44,6 @@ export interface IediRecord {
 
 export interface OpenRecordParams {
   intent: string;
-  work_domain?: WorkDomain;
   tool_called?: string;
   mode_used?: ModeUsed;
 }
@@ -71,7 +63,7 @@ export interface IediStoreOptions {
 
 // ---- Constants & filesystem helpers --------------------------------------
 
-const SCHEMA_VERSION = '0.2-draft';
+const SCHEMA_VERSION = '0.3';
 
 function defaultIediDir(): string {
   const dbPath = process.env['IEDI_DB_PATH'];
@@ -118,7 +110,6 @@ function initDb(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS records (
       record_id                  TEXT PRIMARY KEY,
       schema_version             TEXT NOT NULL,
-      work_domain                TEXT NOT NULL CHECK(work_domain IN ('external_transaction','internal_task','decision','retrospective')),
       tool_called                TEXT,
       requester_actor_id         TEXT NOT NULL,
       provider_actor_id          TEXT NOT NULL,
@@ -149,7 +140,6 @@ export function computeHash(record: IediRecord): string {
   const payload: Omit<IediRecord, 'record_hash'> = {
     record_id: record.record_id,
     schema_version: record.schema_version,
-    work_domain: record.work_domain,
     tool_called: record.tool_called,
     requester_actor_id: record.requester_actor_id,
     provider_actor_id: record.provider_actor_id,
@@ -174,7 +164,6 @@ function rowToRecord(row: Record<string, unknown>): IediRecord {
   return {
     record_id: row['record_id'] as string,
     schema_version: row['schema_version'] as string,
-    work_domain: row['work_domain'] as WorkDomain,
     tool_called: (row['tool_called'] ?? null) as string | null,
     requester_actor_id: row['requester_actor_id'] as string,
     provider_actor_id: row['provider_actor_id'] as string,
@@ -246,14 +235,11 @@ export class IediStore {
         .get() as { record_hash: string } | undefined;
 
       const prevHash = lastClosed?.record_hash ?? null;
-      const workDomain: WorkDomain = params.work_domain ?? 'internal_task';
-      const modeUsed: ModeUsed =
-        workDomain === 'decision' ? 'cooperative' : (params.mode_used ?? 'cooperative');
+      const modeUsed: ModeUsed = params.mode_used ?? 'cooperative';
 
       const record: IediRecord = {
         record_id: ulid(),
         schema_version: SCHEMA_VERSION,
-        work_domain: workDomain,
         tool_called: params.tool_called ?? null,
         requester_actor_id: this._actorId,
         provider_actor_id: this._actorId,
@@ -273,13 +259,13 @@ export class IediStore {
       this.db
         .prepare(
           `INSERT INTO records (
-            record_id, schema_version, work_domain, tool_called,
+            record_id, schema_version, tool_called,
             requester_actor_id, provider_actor_id, mode_used, status,
             intent, evidence, delta, insight,
             requester_prev_record_hash, provider_prev_record_hash,
             record_hash, created_at, closed_at
           ) VALUES (
-            @record_id, @schema_version, @work_domain, @tool_called,
+            @record_id, @schema_version, @tool_called,
             @requester_actor_id, @provider_actor_id, @mode_used, @status,
             @intent, @evidence, @delta, @insight,
             @requester_prev_record_hash, @provider_prev_record_hash,
@@ -397,14 +383,9 @@ export class IediStore {
     return row ? rowToRecord(row) : null;
   }
 
-  listRecords(filters?: { work_domain?: WorkDomain; limit?: number }): IediRecord[] {
+  listRecords(filters?: { limit?: number }): IediRecord[] {
     let query = `SELECT * FROM records`;
     const params: unknown[] = [];
-
-    if (filters?.work_domain) {
-      query += ` WHERE work_domain = ?`;
-      params.push(filters.work_domain);
-    }
 
     query += ` ORDER BY record_id DESC`;
 
