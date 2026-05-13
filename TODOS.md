@@ -22,22 +22,6 @@
 
 ---
 
-## T-1: DB マイグレーション戦略の定義
-
-**What:** `~/.iedi/records.db` のスキーマ変更（v0.3 以降）に対するマイグレーション手順を定義する。
-
-**Why:** v0.2-draft → v0.3 スキーマ変更時、グローバル DB の既存レコードが破損するリスクがある。一人の開発者が毎日蓄積する信用ログが消えると Approach A の価値が失われる。
-
-**Pros:** 将来のスキーマ変更が安全に行える。Approach B（AMCPサーバー）移行時の信頼性が保たれる。
-
-**Cons:** better-sqlite3 の `PRAGMA user_version` ベースの簡易マイグレーションでも実装コストがかかる。
-
-**Context:** `~/.iedi/records.db` はユーザーグローバル。iedi-store.ts の初期化時に `PRAGMA user_version` を確認し、旧バージョンなら ALTER TABLE を実行する仕組みが最小実装。`schemaVersion` フィールドを `spec/iedi-record-v0.2.json` に記載済み。
-
-**Depends on:** iedi-store.ts (Step 2) 完成後。Approach B 実装前に必須。
-
----
-
 ## T-2: `iedi doctor` コマンド（ハッシュチェーン全件再検証）
 
 **What:** `iedi doctor` コマンド。全レコードの `record_hash` を `computeHash()` で再計算し、保存値と照合する。チェーンの連結（`requester_prev_record_hash`）も検証する。
@@ -66,7 +50,7 @@
 
 **Context:** `package.json` に `"bin": { "iedi": "dist/cli/iedi.js" }` は設定済み。GitHub Actions で `npm publish` するか、`bun build --compile` で single binary を Releases にアップロードする2択が有力。better-sqlite3 の native addon バンドルは bun compile では未検証。
 
-**Depends on:** Approach A 安定稼働確認後。T-1 (DB マイグレーション) と同時に検討推奨。
+**Depends on:** Approach A 安定稼働確認後。DB マイグレーション機構は実装済み。
 
 ---
 
@@ -98,7 +82,7 @@
 
 **Context:** 各 `### Intervention N` が ROZA の `E_evaluated` エッジ1本に対応。`Verdict` → `verdict`、`Confidence` → `confidence_delta`、`Reason` → `reason`、`Description` → `action_ref`。クロスセッションエッジは record_id を跨いだ参照が必要。
 
-**Depends on:** 構造化テンプレート運用開始後、50+ レコード蓄積時点で着手検討。T-1（DB マイグレーション戦略）が先行必須。
+**Depends on:** 構造化テンプレート運用開始後、50+ レコード蓄積時点で着手検討。DB マイグレーション機構は実装済み。
 
 ---
 
@@ -128,7 +112,7 @@
 
 **Cons:** 文書チャンキング（chunk_size=512）、oracle/distractor mixing（--p フラグ）、HuggingFace Dataset 出力の実装が必要。RAFT の基盤訓練には数百〜数千サンプルが必要で、個人利用で必要量に達するには時間がかかる。
 
-**Context:** エクスポートツールが `work_domain` と `intent` から最も関連する digest 文書を検索して context を組み立てる。Evidence Item ブロック単位で分割し、各ブロックを独立した訓練サンプルとして出力する。
+**Context:** エクスポートツールが `intent` から最も関連する digest 文書を検索して context を組み立てる。Evidence Item ブロック単位で分割し、各ブロックを独立した訓練サンプルとして出力する。
 
 **Depends on:** 構造化 Evidence の蓄積（50+ レコード）。合成データ生成やセッション間データ共有でサンプル数不足を補う戦略も並行検討。
 
@@ -142,8 +126,8 @@
 
 **Pros:** Evidence 項目単位で verdict をクエリできるようになり、ROZA Graphs のエッジ構築が正確になる。
 
-**Cons:** DB スキーマ変更（`evidence` JSON の要素に `verdict`, `confidence_delta` を追加）、`schema_version` → `0.3-draft`、マイグレーションスクリプトが必要。T-1（DB マイグレーション戦略）が先行必須。
+**Cons:** DB スキーマ変更（`evidence` JSON の要素に `verdict`, `confidence_delta` を追加）、`schema_version` → `0.4`、MIGRATIONS 配列への新エントリ追加が必要。
 
 **Context:** テンプレート運用で限界（Evidence-Insight 間の不整合が頻発する等）が見えたら着手。現状はテキスト規約で十分な可能性が高い。
 
-**Depends on:** T-1（DB マイグレーション戦略）完成後。構造化テンプレート運用で 20+ レコード蓄積し、不整合の頻度を評価してから判断。
+**Depends on:** DB マイグレーション機構は実装済み。構造化テンプレート運用で 20+ レコード蓄積し、不整合の頻度を評価してから判断。
