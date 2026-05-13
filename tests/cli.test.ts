@@ -50,7 +50,7 @@ describe.sequential('CLI happy path: open → add evidence → close → query',
   });
 
   it('open outputs a record ID', () => {
-    const out = iedi(`open --intent "テストを書く" --work-domain internal_task`, env);
+    const out = iedi(`open --intent "テストを書く"`, env);
     expect(out).toMatch(/Record opened:/);
     expect(out).toContain('テストを書く');
   });
@@ -86,7 +86,6 @@ describe.sequential('CLI happy path: open → add evidence → close → query',
     const records = JSON.parse(out) as Record<string, unknown>[];
     expect(records).toHaveLength(1);
     const r = records[0];
-    expect(r).toHaveProperty('work_domain', 'internal_task');
     expect(r).toHaveProperty('intent', 'テストを書く');
     expect(typeof r['delta']).toBe('string');
     expect(r).toHaveProperty('insight');

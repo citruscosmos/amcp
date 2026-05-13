@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { IediStore, computeHash } from '../src/storage/iedi-store.js';
 
 const ACTOR = 'TEST_ACTOR_01HTEST000000000000000000';
@@ -202,5 +206,108 @@ describe('IediStore', () => {
     const closed = store.getRecord(r.record_id)!;
     const hashWithB = computeHash({ ...closed, insight: { provider: null, requester: 'B' } });
     expect(hashWithB).not.toBe(closed.record_hash);
+  });
+});
+
+// ---- migration tests --------------------------------------------------------
+
+describe('IediStore migration', () => {
+  // Test 1: Old schema → migration removes work_domain column
+  it('migrates old schema by removing work_domain column', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'iedi-mig-old-'));
+    const dbPath = join(tmpDir, 'records.db');
+    try {
+      // Create old schema with work_domain column (v0.2)
+      const db = new Database(dbPath);
+      db.exec(`
+        CREATE TABLE records (
+          record_id                  TEXT PRIMARY KEY,
+          schema_version             TEXT NOT NULL,
+          tool_called                TEXT,
+          work_domain                TEXT,
+          requester_actor_id         TEXT NOT NULL,
+          provider_actor_id          TEXT NOT NULL,
+          mode_used                  TEXT NOT NULL,
+          status                     TEXT NOT NULL,
+          intent                     TEXT NOT NULL,
+          evidence                   TEXT NOT NULL,
+          delta                      TEXT,
+          insight                    TEXT,
+          requester_prev_record_hash TEXT,
+          provider_prev_record_hash  TEXT,
+          record_hash                TEXT,
+          created_at                 TEXT NOT NULL,
+          closed_at                  TEXT
+        );
+      `);
+      db.pragma('user_version = 0');
+      db.close();
+
+      // Open via IediStore to trigger migration
+      const store = new IediStore({ dbPath, actorId: 'MIG_OLD_ACTOR_0000000000000000' });
+      store.close();
+
+      // Verify work_domain was removed
+      const checkDb = new Database(dbPath);
+      const cols = checkDb.pragma('table_info(records)') as Array<{ name: string }>;
+      expect(cols.some((c) => c.name === 'work_domain')).toBe(false);
+      checkDb.close();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // Test 2: New DB creates latest schema without warnings
+  it('creates new DB with latest schema and no warnings', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'iedi-mig-new-'));
+    const dbPath = join(tmpDir, 'records.db');
+    try {
+      const consoleWarnCalls: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        consoleWarnCalls.push(args.map(String).join(' '));
+      };
+      try {
+        const store = new IediStore({ dbPath, actorId: 'MIG_NEW_ACTOR_0000000000000000' });
+        store.close();
+
+        // Verify schema
+        const checkDb = new Database(dbPath);
+        const cols = checkDb.pragma('table_info(records)') as Array<{ name: string }>;
+        expect(cols.some((c) => c.name === 'work_domain')).toBe(false);
+        checkDb.close();
+
+        // No migration warnings for new DBs
+        const migrationWarns = consoleWarnCalls.filter((m) => m.includes('work_domain'));
+        expect(migrationWarns).toHaveLength(0);
+      } finally {
+        console.warn = originalWarn;
+      }
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  // Test 3: Idempotency — re-running on migrated DB is safe
+  it('is idempotent — re-running migrations on already migrated DB does not error', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'iedi-mig-idem-'));
+    const dbPath = join(tmpDir, 'records.db');
+    try {
+      // First open — migration runs
+      const store1 = new IediStore({ dbPath, actorId: 'MIG_IDEM_ACTOR_000000000000000' });
+      store1.close();
+
+      // Re-open — should be safe
+      const store2 = new IediStore({ dbPath, actorId: 'MIG_IDEM_ACTOR_000000000000000' });
+      store2.close();
+
+      // Verify schema unchanged
+      const checkDb = new Database(dbPath);
+      const cols = checkDb.pragma('table_info(records)') as Array<{ name: string }>;
+      expect(cols.some((c) => c.name === 'work_domain')).toBe(false);
+      checkDb.close();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

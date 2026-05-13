@@ -5,6 +5,7 @@ import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { ulid } from 'ulid';
 import { canonicalize } from 'json-canonicalize';
+import { runMigrations } from './migrate.js';
 
 // ---- Types ----------------------------------------------------------------
 
@@ -129,6 +130,8 @@ function initDb(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_records_closed_at  ON records (closed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_records_created_at ON records (created_at DESC);
   `);
+
+  runMigrations(db);
 }
 
 // ---- Hash computation ----------------------------------------------------
