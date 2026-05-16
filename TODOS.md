@@ -1,6 +1,8 @@
 # TODOS
 
-## T-0: `~/.claude/skills/amcp/` レイアウトへの移行（setup スクリプト）
+## T-0: `~/.claude/skills/amcp/` レイアウトへの移行（setup スクリプト） ✅ DONE
+
+**Status: 完了（2026-05-12〜16）** — 全 8 サブタスク実装済み。setup スクリプト、skill レイアウト、`$AMCP_HOME`/`$IEDI_BIN` 参照パターン、README すべて移行完了。
 
 **What:** `skills/setup` スクリプトを作成し、gstack パターンに従って `~/.claude/skills/amcp/` への統一レイアウト移行を自動化する。
 
@@ -23,6 +25,8 @@
 ---
 
 ## T-2: `iedi doctor` コマンド（ハッシュチェーン全件再検証）
+
+**Status: Phase 0 に組み込み済み（設計 doc 2026-05-16 改訂）**
 
 **What:** `iedi doctor` コマンド。全レコードの `record_hash` を `computeHash()` で再計算し、保存値と照合する。チェーンの連結（`requester_prev_record_hash`）も検証する。
 
@@ -55,6 +59,8 @@
 ---
 
 ## T-4: `iedi close` の `--insight-provider` / `--insight-requester` フラグの CLI 統合テスト
+
+**Status: Phase 0 に組み込み済み（設計 doc 2026-05-16 改訂）**
 
 **What:** `src/cli/iedi.ts` の `iedi close --insight-provider "..." --insight-requester "..."` を実際の CLI 呼び出しレベルでテストする統合テストを追加する。
 
@@ -131,3 +137,53 @@
 **Context:** テンプレート運用で限界（Evidence-Insight 間の不整合が頻発する等）が見えたら着手。現状はテキスト規約で十分な可能性が高い。
 
 **Depends on:** DB マイグレーション機構は実装済み。構造化テンプレート運用で 20+ レコード蓄積し、不整合の頻度を評価してから判断。
+
+---
+
+## T-9: `amcp digest --weekly`（週次 AMCP サマリー CLI）
+
+**What:** 週次サマリーCLI。取引数（モード別）、Delta平均推移、capabilities変化、チーム内スキルギャップ、trust_claims変化を構造化出力する。
+
+**Why:** 経営層向けダッシュボード（Phase 3）のCLIプロトタイプ。経営層が「AMCPを導入すると何が見えるか」をPhase 2の時点で体験できる。Phase 3のWebダッシュボードの要件定義にも役立つ。
+
+**Pros:** AMCP導入の価値を早期に可視化。経営層向けダッシュボードのMinimum Viable Preview。
+
+**Cons:** CLI版はPhase 3のWebダッシュボードと統合される可能性が高く、使い捨てプロトタイプになる。二重実装のコスト。
+
+**Context:** `amcp digest --weekly` が `trust_claims` と `iedi query` の結果を組み合わせてMarkdownテーブルを出力する。30行程度のCLIコマンド追加。人間が読むための出力であり、機械可読性は不要。
+
+**Effort:** S → CC+gstack: S
+**Priority:** P3
+**Depends on:** trust_claims実装完了後（Phase 2）。Phase 3 Webダッシュボードの要件定義にも活用できる。
+
+---
+
+## T-10: listRecords ページネーションオフセット
+
+**What:** `IediStore.listRecords()` に OFFSET またはカーソルベースのページネーションを追加する。現在は LIMIT のみサポートで、履歴のページ送りができない。
+
+**Why:** Phase 2 のチームサーバーでは 100+ レコードの蓄積が想定され、全件取得やページネーションなしの LIMIT では運用に支障が出る。
+
+**Pros:** 大規模レコードセットの効率的なクエリが可能になる。
+
+**Cons:** SQLite の OFFSET は大規模データセットでパフォーマンスが低下する（OFFSET 1000 は 1000 行をスキャンして破棄）。カーソルベース（`WHERE record_id < ?`）の方が効率的だが、API がやや複雑になる。
+
+**Context:** Phase 1（48h プロトタイプ、~3 レコード）では不要。Phase 2 でチームサーバーをデプロイする前に着手する。
+
+**Depends on:** Phase 2 チームサーバー展開の目処が立った時点。
+
+---
+
+## T-11: 孤児レコード検出（iedi doctor --fix-orphans）
+
+**What:** `iedi doctor --fix-orphans` コマンド。`status = 'open'` かつ `created_at` が N 時間以上経過しているレコードを検出し、`failed` または `cancelled` にクローズするオプションを提供する。
+
+**Why:** AMCP サーバーが Actor Tool 実行中にクラッシュした場合、レコードが `open` のまま残り、次の `record_start` が「Open record already exists」で失敗する。Phase 1 のデモでは手動 DB クエリで対応可能だが、Phase 2 のチーム運用では自動リカバリが必要。
+
+**Pros:** サーバークラッシュ後の自動復旧。運用負荷の低減。
+
+**Cons:** 孤児判定の閾値（N 時間）を設定する必要がある。短すぎると実行中の長時間タスクを孤児扱いするリスクがある。
+
+**Context:** Failure modes 分析で特定されたクリティカルギャップ。`record_close` 中のクラッシュについては、トランザクションがコミットされていればレコードは閉じられており、クライアントが再試行すれば "already closed" エラーからハッシュを取得できる。一方、Actor Tool 実行中のクラッシュはレコードが `open` のまま残り、復旧手段がない。
+
+**Depends on:** T-2（`iedi doctor`）の CLI 基盤。
