@@ -35,6 +35,7 @@ function iediInDir(args: string, cwd: string, env: NodeJS.ProcessEnv): string {
 describe.sequential('CLI happy path: open → add evidence → close → query', () => {
   let tmpDir: string;
   let env: NodeJS.ProcessEnv;
+  let recordId: string;
 
   beforeAll(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'iedi-cli-test-'));
@@ -53,24 +54,29 @@ describe.sequential('CLI happy path: open → add evidence → close → query',
     const out = iedi(`open --intent "テストを書く"`, env);
     expect(out).toMatch(/Record opened:/);
     expect(out).toContain('テストを書く');
+    const match = out.match(/Record opened:\s+(\S+)/);
+    recordId = match?.[1] ?? '';
+    expect(recordId).toBeTruthy();
   });
 
   it('second open succeeds (open constraint removed)', () => {
     const out = iedi(`open --intent "second"`, env);
     expect(out).toMatch(/Record opened:/);
+    const match = out.match(/Record opened:\s+(\S+)/);
+    const secondId = match?.[1] ?? '';
     // Close it so it doesn't pollute downstream tests
-    iedi(`close --last --delta "cleanup"`, env);
+    iedi(`close --record-id ${secondId} --delta "cleanup"`, env);
   });
 
   it('add evidence appends an entry', () => {
-    const out = iedi(`add evidence --last --text "vitest を導入した"`, env);
+    const out = iedi(`add evidence --record-id ${recordId} --text "vitest を導入した"`, env);
     expect(out).toMatch(/Evidence added/);
     expect(out).toContain('1 item');
   });
 
   it('close persists delta and insight, outputs hash', () => {
     const out = iedi(
-      `close --last --delta "テスト範囲が想定より広く、統合テストを追加した" --insight-provider "次回は事前にインターフェースを確認する"`,
+      `close --record-id ${recordId} --delta "テスト範囲が想定より広く、統合テストを追加した" --insight-provider "次回は事前にインターフェースを確認する"`,
       env,
     );
     expect(out).toMatch(/Record closed:/);
@@ -99,8 +105,10 @@ describe.sequential('CLI happy path: open → add evidence → close → query',
 
   it('hash chain: prev_record_hash of 2nd record equals record_hash of 1st', () => {
     // Open and close a second record
-    iedi(`open --intent "2件目のタスク"`, env);
-    iedi(`close --last --delta "完了した"`, env);
+    const out2 = iedi(`open --intent "2件目のタスク"`, env);
+    const match2 = out2.match(/Record opened:\s+(\S+)/);
+    const thirdId = match2?.[1] ?? '';
+    iedi(`close --record-id ${thirdId} --delta "完了した"`, env);
 
     const out = iedi(`query --json`, env);
     const records = JSON.parse(out) as Record<string, unknown>[];
@@ -190,6 +198,7 @@ describe.sequential('CLI add evidence: session-summary, git-diff, graceful skip'
   let tmpDir: string;
   let env: NodeJS.ProcessEnv;
   let summaryFile: string;
+  let recordId: string;
 
   beforeAll(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'iedi-capture-test-'));
@@ -213,10 +222,13 @@ describe.sequential('CLI add evidence: session-summary, git-diff, graceful skip'
   it('open starts a record for add evidence tests', () => {
     const out = iedi('open --intent "add evidence test"', env);
     expect(out).toMatch(/Record opened:/);
+    const match = out.match(/Record opened:\s+(\S+)/);
+    recordId = match?.[1] ?? '';
+    expect(recordId).toBeTruthy();
   });
 
   it('add evidence --session-summary appends file content as evidence', () => {
-    const out = iedi(`add evidence --session-summary "${summaryFile}" --last`, env);
+    const out = iedi(`add evidence --session-summary "${summaryFile}" --record-id ${recordId}`, env);
     expect(out).toMatch(/Evidence added/);
   });
 
@@ -227,7 +239,7 @@ describe.sequential('CLI add evidence: session-summary, git-diff, graceful skip'
       execSync('git init', { cwd: gitDir, stdio: 'pipe' });
       execSync('git config user.email "test@test.com"', { cwd: gitDir, stdio: 'pipe' });
       execSync('git config user.name "Test"', { cwd: gitDir, stdio: 'pipe' });
-      const out = iediInDir('add evidence --git-diff --last', gitDir, env);
+      const out = iediInDir(`add evidence --git-diff --record-id ${recordId}`, gitDir, env);
       expect(out).toMatch(/Evidence added/);
     } finally {
       rmSync(gitDir, { recursive: true, force: true });
@@ -235,12 +247,12 @@ describe.sequential('CLI add evidence: session-summary, git-diff, graceful skip'
   });
 
   it('add evidence --git-diff gracefully skips in a non-git directory', () => {
-    const out = iediInDir('add evidence --git-diff --last', tmpDir, env);
+    const out = iediInDir(`add evidence --git-diff --record-id ${recordId}`, tmpDir, env);
     expect(out).toMatch(/Skipped:/);
   });
 
   it('add evidence with no content option reads from stdin in non-TTY', () => {
-    const out = iediStdin(`add evidence --last`, 'stdin fallback content', env);
+    const out = iediStdin(`add evidence --record-id ${recordId}`, 'stdin fallback content', env);
     expect(out).toMatch(/Evidence added/);
   });
 
@@ -251,7 +263,7 @@ describe.sequential('CLI add evidence: session-summary, git-diff, graceful skip'
     expect(evidence.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('add evidence with no target flag exits with error', () => {
+  it('add evidence without required --record-id exits with error', () => {
     expect(() => iedi('add evidence --git-diff', env)).toThrow();
   });
 });

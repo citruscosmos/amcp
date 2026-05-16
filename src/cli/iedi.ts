@@ -2,7 +2,7 @@
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { Command, Option } from 'commander';
-import { IediStore } from '../storage/iedi-store.js';
+import { IediStore, computeHash } from '../storage/iedi-store.js';
 
 // Prevent ugly EPIPE stack trace when output is piped (e.g. iedi query --json | head)
 process.stdout.on('error', (err) => {
@@ -26,20 +26,6 @@ function checkWorkspace(): void {
     console.error('Error: IEDI_WORKSPACE is not set. Please define the IEDI_WORKSPACE environment variable.');
     process.exit(1);
   }
-}
-
-// ---- record resolution helper --------------------------------------------
-
-function resolveRecordId(store: IediStore, opts: { last?: boolean; recordId?: string }): string {
-  if (opts.last) {
-    const open = store.getOpenRecord();
-    if (!open) {
-      console.error('Error: no open record. Run "iedi open" first.');
-      process.exit(1);
-    }
-    return open.record_id;
-  }
-  return opts.recordId as string;
 }
 
 // ---- evidence source resolution -------------------------------------------
@@ -101,19 +87,14 @@ const addCmd = program
 
 addCmd
   .command('evidence')
-  .description('Append an evidence entry to a record (--last or --record-id required)')
-  .option('--last', 'Target the current open record')
-  .option('--record-id <id>', 'Target a specific record by ID')
+  .description('Append an evidence entry to a record')
+  .requiredOption('--record-id <id>', 'Target record ID')
   .option('--text <text>', 'Evidence content as a string')
   .option('--session-summary <file>', 'Read a session summary markdown file and append as evidence')
   .option('--git-diff', 'Capture git status + git diff HEAD as evidence')
   .option('--source <source>', 'Evidence source label (auto-set per option, or override)')
   .action(async (opts) => {
     checkWorkspace();
-    if (!opts.last && !opts.recordId) {
-      console.error('Error: specify --last or --record-id <id>');
-      process.exit(1);
-    }
 
     const hasContent = !!(opts.text || opts.sessionSummary || opts.gitDiff);
     if (!hasContent && process.stdin.isTTY) {
@@ -123,7 +104,7 @@ addCmd
 
     const store = new IediStore();
     try {
-      const recordId = resolveRecordId(store, opts);
+      const recordId = opts.recordId as string;
       const source = resolveSource(opts);
       let count = 0;
 
@@ -188,22 +169,17 @@ addCmd
 program
   .command('close')
   .description('Close an open record, compute hash, and persist to DB')
-  .option('--last', 'Target the current open record')
-  .option('--record-id <id>', 'Target a specific record by ID')
+  .requiredOption('--record-id <id>', 'Target record ID')
   .requiredOption('--delta <text>', 'Natural-language diff between intent and what actually happened')
   .option('--insight-provider <text>', 'Retrospective insight (model perspective, 4-section format)')
   .option('--insight-requester <text>', 'Retrospective insight (user perspective)')
   .addOption(new Option('--status <status>', 'Completion status').choices(['completed', 'failed']).default('completed'))
   .action((opts) => {
     checkWorkspace();
-    if (!opts.last && !opts.recordId) {
-      console.error('Error: specify --last or --record-id <id>');
-      process.exit(1);
-    }
 
     const store = new IediStore();
     try {
-      const recordId = resolveRecordId(store, opts);
+      const recordId = opts.recordId as string;
 
       const record = store.closeRecord({
         record_id: recordId,
@@ -277,6 +253,114 @@ program
         if (r.record_hash) console.log(`    hash:    ${r.record_hash.slice(0, 16)}...`);
         console.log('');
       }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
+// ---- iedi doctor ---------------------------------------------------------
+
+program
+  .command('doctor')
+  .description('Verify hash-chain integrity of all IEDI records (read-only)')
+  .option('--verbose', 'Show per-record verification details')
+  .option('--json', 'Output results as JSON')
+  .action((opts) => {
+    checkWorkspace();
+    const store = new IediStore();
+    try {
+      const records = store.listRecords();
+      if (records.length === 0) {
+        if (opts.json) {
+          console.log(JSON.stringify({ records: 0, issues: 0, requester_chain: { verified: 0, broken: 0 }, provider_chain: { verified: 0, broken: 0 } }));
+        } else {
+          console.log('No records found.');
+        }
+        process.exit(0);
+      }
+
+      // Build lookup map: record_hash -> record
+      const byHash = new Map<string, typeof records[0]>();
+      for (const r of records) {
+        if (r.record_hash) byHash.set(r.record_hash, r);
+      }
+
+      const issues: Array<{ record_id: string; type: string; detail: string }> = [];
+      let requesterLinksOk = 0;
+      let requesterLinksBroken = 0;
+      let providerLinksOk = 0;
+      let providerLinksBroken = 0;
+
+      for (const r of records) {
+        const recomputed = computeHash(r);
+        if (r.record_hash && recomputed !== r.record_hash) {
+          issues.push({
+            record_id: r.record_id,
+            type: 'HASH_MISMATCH',
+            detail: `stored: ${r.record_hash.slice(0, 16)}..., computed: ${recomputed.slice(0, 16)}...`,
+          });
+        }
+
+        if (r.requester_prev_record_hash) {
+          const prev = byHash.get(r.requester_prev_record_hash);
+          if (prev) {
+            requesterLinksOk++;
+          } else {
+            requesterLinksBroken++;
+            issues.push({
+              record_id: r.record_id,
+              type: 'CHAIN_BROKEN',
+              detail: `requester_prev_record_hash "${r.requester_prev_record_hash.slice(0, 16)}..." not found`,
+            });
+          }
+        }
+
+        if (r.provider_prev_record_hash) {
+          const prev = byHash.get(r.provider_prev_record_hash);
+          if (prev) {
+            providerLinksOk++;
+          } else {
+            providerLinksBroken++;
+            issues.push({
+              record_id: r.record_id,
+              type: 'CHAIN_BROKEN',
+              detail: `provider_prev_record_hash "${r.provider_prev_record_hash.slice(0, 16)}..." not found`,
+            });
+          }
+        }
+
+        if (opts.verbose) {
+          const recordIssues = issues.filter((i) => i.record_id === r.record_id);
+          if (recordIssues.length === 0 && r.record_hash) {
+            console.log(`[${r.record_id}] OK`);
+          } else if (!r.record_hash) {
+            console.log(`[${r.record_id}] NO_HASH — record not finalized`);
+          } else {
+            for (const issue of recordIssues) {
+              console.log(`[${r.record_id}] ${issue.type} — ${issue.detail}`);
+            }
+          }
+        }
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({
+          records: records.length,
+          issues: issues.length,
+          requester_chain: { verified: requesterLinksOk, broken: requesterLinksBroken },
+          provider_chain: { verified: providerLinksOk, broken: providerLinksBroken },
+          details: issues.length > 0 ? issues : undefined,
+        }, null, 2));
+      } else {
+        console.log(`\nRecords: ${records.length} verified, ${issues.length} with issues`);
+        console.log(`Requester chain: ${requesterLinksOk} links verified, ${requesterLinksBroken} broken`);
+        console.log(`Provider chain: ${providerLinksOk} links verified, ${providerLinksBroken} broken`);
+      }
+
+      process.exit(issues.length > 0 ? 1 : 0);
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
