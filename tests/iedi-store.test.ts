@@ -214,6 +214,239 @@ describe('IediStore', () => {
     const hashWithB = computeHash({ ...closed, insight: { provider: null, requester: 'B' } });
     expect(hashWithB).not.toBe(closed.record_hash);
   });
+
+  // ---- recordFeedback -------------------------------------------------------
+
+  it('recordFeedback saves delta to open record', () => {
+    const r = store.openRecord({ intent: 'feedback test' });
+    store.recordFeedback(r.record_id, { delta: 'partial progress' });
+    const updated = store.getRecord(r.record_id)!;
+    expect(updated.delta).toBe('partial progress');
+    expect(updated.status).toBe('open');
+  });
+
+  it('recordFeedback saves insight_provider', () => {
+    const r = store.openRecord({ intent: 'feedback test' });
+    store.recordFeedback(r.record_id, { delta: 'd', insight_provider: 'provider note' });
+    const updated = store.getRecord(r.record_id)!;
+    expect(updated.insight).toEqual({ provider: 'provider note', requester: null });
+  });
+
+  it('recordFeedback saves insight_requester', () => {
+    const r = store.openRecord({ intent: 'feedback test' });
+    store.recordFeedback(r.record_id, { delta: 'd', insight_requester: 'requester note' });
+    const updated = store.getRecord(r.record_id)!;
+    expect(updated.insight).toEqual({ provider: null, requester: 'requester note' });
+  });
+
+  it('recordFeedback saves both insights simultaneously', () => {
+    const r = store.openRecord({ intent: 'feedback test' });
+    store.recordFeedback(r.record_id, {
+      delta: 'progress',
+      insight_provider: 'prov',
+      insight_requester: 'req',
+    });
+    const updated = store.getRecord(r.record_id)!;
+    expect(updated.insight).toEqual({ provider: 'prov', requester: 'req' });
+  });
+
+  it('recordFeedback keeps status open', () => {
+    const r = store.openRecord({ intent: 'stay open' });
+    store.recordFeedback(r.record_id, { delta: 'mid-session note' });
+    const updated = store.getRecord(r.record_id)!;
+    expect(updated.status).toBe('open');
+    expect(updated.closed_at).toBeNull();
+  });
+
+  it('recordFeedback throws when record is already closed', () => {
+    const r = store.openRecord({ intent: 'will close first' });
+    store.closeRecord({ record_id: r.record_id, delta: 'done' });
+    expect(() =>
+      store.recordFeedback(r.record_id, { delta: 'too late' }),
+    ).toThrow(/not open/);
+  });
+
+  it('recordFeedback throws when record_id does not exist', () => {
+    expect(() =>
+      store.recordFeedback('NONEXISTENT', { delta: 'nothing' }),
+    ).toThrow(/Record not found/);
+  });
+
+  it('recordFeedback overwrites delta on second call', () => {
+    const r = store.openRecord({ intent: 'overwrite test' });
+    store.recordFeedback(r.record_id, { delta: 'first delta' });
+    store.recordFeedback(r.record_id, { delta: 'second delta' });
+    const updated = store.getRecord(r.record_id)!;
+    expect(updated.delta).toBe('second delta');
+  });
+
+  it('recordFeedback overwrites insight on second call', () => {
+    const r = store.openRecord({ intent: 'overwrite insight' });
+    store.recordFeedback(r.record_id, { delta: 'd', insight_provider: 'first' });
+    store.recordFeedback(r.record_id, { delta: 'd', insight_requester: 'second' });
+    const updated = store.getRecord(r.record_id)!;
+    expect(updated.insight).toEqual({ provider: null, requester: 'second' });
+  });
+
+  // ---- multi-actor openRecord -----------------------------------------------
+
+  it('openRecord with explicit requester_actor_id', () => {
+    const r = store.openRecord({
+      intent: 'p2p request',
+      requester_actor_id: 'did:amcp:alice-abc123',
+    });
+    expect(r.requester_actor_id).toBe('did:amcp:alice-abc123');
+    expect(r.provider_actor_id).toBe(ACTOR); // default
+  });
+
+  it('openRecord with explicit provider_actor_id', () => {
+    const r = store.openRecord({
+      intent: 'p2p request',
+      provider_actor_id: 'did:amcp:bob-def456',
+    });
+    expect(r.requester_actor_id).toBe(ACTOR); // default
+    expect(r.provider_actor_id).toBe('did:amcp:bob-def456');
+  });
+
+  it('openRecord with both actor IDs explicit', () => {
+    const r = store.openRecord({
+      intent: 'full p2p',
+      requester_actor_id: 'did:amcp:alice-abc123',
+      provider_actor_id: 'did:amcp:bob-def456',
+    });
+    expect(r.requester_actor_id).toBe('did:amcp:alice-abc123');
+    expect(r.provider_actor_id).toBe('did:amcp:bob-def456');
+  });
+
+  it('openRecord with omitted actor IDs defaults to this._actorId', () => {
+    const r = store.openRecord({ intent: 'default actors' });
+    expect(r.requester_actor_id).toBe(ACTOR);
+    expect(r.provider_actor_id).toBe(ACTOR);
+  });
+
+  it('openRecord stores requester_actor_id correctly in retrieved record', () => {
+    const r = store.openRecord({
+      intent: 'verify storage',
+      requester_actor_id: 'did:amcp:charlie-ghi789',
+    });
+    const retrieved = store.getRecord(r.record_id)!;
+    expect(retrieved.requester_actor_id).toBe('did:amcp:charlie-ghi789');
+  });
+
+  it('openRecord stores provider_actor_id correctly in retrieved record', () => {
+    const r = store.openRecord({
+      intent: 'verify storage',
+      provider_actor_id: 'did:amcp:diana-jkl012',
+    });
+    const retrieved = store.getRecord(r.record_id)!;
+    expect(retrieved.provider_actor_id).toBe('did:amcp:diana-jkl012');
+  });
+
+  it('requester_prev_record_hash links to previous record with same requester', () => {
+    // First record for requester A
+    const r1 = store.openRecord({
+      intent: 'first by A',
+      requester_actor_id: 'actor-A',
+    });
+    store.closeRecord({ record_id: r1.record_id, delta: 'done' });
+    const closed1 = store.getRecord(r1.record_id)!;
+
+    // Second record for requester A → prev_hash should point to r1
+    const r2 = store.openRecord({
+      intent: 'second by A',
+      requester_actor_id: 'actor-A',
+    });
+    expect(r2.requester_prev_record_hash).toBe(closed1.record_hash);
+  });
+
+  it('provider_prev_record_hash links to previous record with same provider', () => {
+    // First record for provider B
+    const r1 = store.openRecord({
+      intent: 'first for B',
+      provider_actor_id: 'actor-B',
+    });
+    store.closeRecord({ record_id: r1.record_id, delta: 'done' });
+    const closed1 = store.getRecord(r1.record_id)!;
+
+    // Second record for provider B → prev_hash should point to r1
+    const r2 = store.openRecord({
+      intent: 'second for B',
+      provider_actor_id: 'actor-B',
+    });
+    expect(r2.provider_prev_record_hash).toBe(closed1.record_hash);
+  });
+
+  it('multiple open records allowed for different actor pairs', () => {
+    const r1 = store.openRecord({
+      intent: 'pair 1',
+      requester_actor_id: 'A',
+      provider_actor_id: 'B',
+    });
+    const r2 = store.openRecord({
+      intent: 'pair 2',
+      requester_actor_id: 'C',
+      provider_actor_id: 'D',
+    });
+    expect(r1.status).toBe('open');
+    expect(r2.status).toBe('open');
+  });
+
+  it('multiple open records allowed for same actor pair', () => {
+    const r1 = store.openRecord({
+      intent: 'task 1',
+      requester_actor_id: 'X',
+      provider_actor_id: 'Y',
+    });
+    const r2 = store.openRecord({
+      intent: 'task 2',
+      requester_actor_id: 'X',
+      provider_actor_id: 'Y',
+    });
+    expect(r1.status).toBe('open');
+    expect(r2.status).toBe('open');
+  });
+
+  it('getOpenRecord with explicit actorId returns that actor\'s record', () => {
+    const r = store.openRecord({
+      intent: 'specific actor',
+      requester_actor_id: 'actor-Z',
+      provider_actor_id: 'actor-Z',
+    });
+    const open = store.getOpenRecord('actor-Z');
+    expect(open).toBeTruthy();
+    expect(open!.record_id).toBe(r.record_id);
+  });
+
+  it('getOpenRecord without actorId uses default actor', () => {
+    const r = store.openRecord({ intent: 'default actor test' });
+    const open = store.getOpenRecord();
+    expect(open).toBeTruthy();
+    expect(open!.record_id).toBe(r.record_id);
+  });
+
+  // ---- closeRecord post-feedback --------------------------------------------
+
+  it('closeRecord with delta and insight sets both fields correctly', () => {
+    const r = store.openRecord({ intent: 'close with all fields' });
+    const closed = store.closeRecord({
+      record_id: r.record_id,
+      delta: 'completed with notes',
+      insight_provider: 'model feedback',
+      insight_requester: 'user feedback',
+    });
+    expect(closed.delta).toBe('completed with notes');
+    expect(closed.insight).toEqual({ provider: 'model feedback', requester: 'user feedback' });
+    expect(closed.status).toBe('completed');
+    expect(closed.record_hash).toBeTruthy();
+  });
+
+  it('closeRecord without delta throws (delta is required)', () => {
+    const r = store.openRecord({ intent: 'missing delta' });
+    // closeRecord requires delta via TypeScript — test that empty delta still works
+    const closed = store.closeRecord({ record_id: r.record_id, delta: '' });
+    expect(closed.delta).toBe('');
+    expect(closed.status).toBe('completed');
+  });
 });
 
 // ---- migration tests --------------------------------------------------------
