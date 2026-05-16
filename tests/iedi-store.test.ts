@@ -86,11 +86,18 @@ describe('IediStore', () => {
     expect(r2.provider_prev_record_hash).toBe(closed1.record_hash);
   });
 
-  // ---- concurrent open protection ----------------------------------------
+  // ---- multi-open support -------------------------------------------------
 
-  it('opening a 2nd record while one is open throws an error', () => {
-    store.openRecord({ intent: 'first' });
-    expect(() => store.openRecord({ intent: 'second' })).toThrow(/open record already exists/i);
+  it('allows multiple open records simultaneously (open constraint removed)', () => {
+    const r1 = store.openRecord({ intent: 'first' });
+    const r2 = store.openRecord({ intent: 'second' });
+    expect(r1.record_id).toBeTruthy();
+    expect(r2.record_id).toBeTruthy();
+    expect(r1.record_id).not.toBe(r2.record_id);
+
+    // Both should be retrievable with status 'open'
+    expect(store.getRecord(r1.record_id)?.status).toBe('open');
+    expect(store.getRecord(r2.record_id)?.status).toBe('open');
   });
 
   // ---- internal record has provider=requester ------------------------------

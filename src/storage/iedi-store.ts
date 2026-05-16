@@ -47,6 +47,8 @@ export interface OpenRecordParams {
   intent: string;
   tool_called?: string;
   mode_used?: ModeUsed;
+  requester_actor_id?: string;
+  provider_actor_id?: string;
 }
 
 export interface CloseRecordParams {
@@ -141,9 +143,11 @@ function initDb(db: Database.Database): void {
       created_at                 TEXT NOT NULL,
       closed_at                  TEXT
     );
-    CREATE INDEX IF NOT EXISTS idx_records_status     ON records (status);
-    CREATE INDEX IF NOT EXISTS idx_records_closed_at  ON records (closed_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_records_created_at ON records (created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_records_status              ON records (status);
+    CREATE INDEX IF NOT EXISTS idx_records_closed_at           ON records (closed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_records_created_at          ON records (created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_records_requester_closed    ON records (requester_actor_id, closed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_records_provider_closed     ON records (provider_actor_id, closed_at DESC);
   `);
 
   runMigrations(db);
@@ -236,39 +240,41 @@ export class IediStore {
 
   openRecord(params: OpenRecordParams): IediRecord {
     return this.db.transaction((): IediRecord => {
-      const existing = this.db
-        .prepare(`SELECT record_id FROM records WHERE status = 'open' LIMIT 1`)
-        .get() as { record_id: string } | undefined;
+      const requesterId = params.requester_actor_id ?? this._actorId;
+      const providerId = params.provider_actor_id ?? this._actorId;
 
-      if (existing) {
-        throw new Error(
-          `Open record already exists (${existing.record_id}). Run 'iedi close --last' first.`,
-        );
-      }
-
-      const lastClosed = this.db
+      const requesterPrev = this.db
         .prepare(
-          `SELECT record_hash FROM records WHERE record_hash IS NOT NULL ORDER BY closed_at DESC, record_id DESC LIMIT 1`,
+          `SELECT record_hash FROM records
+           WHERE requester_actor_id = ? AND record_hash IS NOT NULL
+           ORDER BY closed_at DESC, record_id DESC LIMIT 1`,
         )
-        .get() as { record_hash: string } | undefined;
+        .get(requesterId) as { record_hash: string } | undefined;
 
-      const prevHash = lastClosed?.record_hash ?? null;
+      const providerPrev = this.db
+        .prepare(
+          `SELECT record_hash FROM records
+           WHERE provider_actor_id = ? AND record_hash IS NOT NULL
+           ORDER BY closed_at DESC, record_id DESC LIMIT 1`,
+        )
+        .get(providerId) as { record_hash: string } | undefined;
+
       const modeUsed: ModeUsed = params.mode_used ?? 'cooperative';
 
       const record: IediRecord = {
         record_id: ulid(),
         schema_version: SCHEMA_VERSION,
         tool_called: params.tool_called ?? null,
-        requester_actor_id: this._actorId,
-        provider_actor_id: this._actorId,
+        requester_actor_id: requesterId,
+        provider_actor_id: providerId,
         mode_used: modeUsed,
         status: 'open',
         intent: params.intent,
         evidence: [],
         delta: null,
         insight: null,
-        requester_prev_record_hash: prevHash,
-        provider_prev_record_hash: prevHash,
+        requester_prev_record_hash: requesterPrev?.record_hash ?? null,
+        provider_prev_record_hash: providerPrev?.record_hash ?? null,
         record_hash: null,
         created_at: new Date().toISOString(),
         closed_at: null,

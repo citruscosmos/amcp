@@ -24,6 +24,18 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 2,
+    description: 'add per-actor hash chain indices for multi-actor directional prev_hash lookups',
+    up: (db) => {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_records_requester_closed
+          ON records (requester_actor_id, closed_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_records_provider_closed
+          ON records (provider_actor_id, closed_at DESC);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {
