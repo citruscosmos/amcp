@@ -374,6 +374,60 @@ export class IediStore {
     return { ...record, delta: params.delta, insight };
   }
 
+  /**
+   * Finalize an open record: set status, closed_at, compute and persist hash.
+   * The record's delta and insight must already be saved (via recordFeedback
+   * or the convenience closeRecord wrapper).
+   */
+  #finalizeRecord(recordId: string, status: Status = 'completed'): IediRecord {
+    const row = this.db
+      .prepare(`SELECT * FROM records WHERE record_id = ?`)
+      .get(recordId) as Record<string, unknown> | undefined;
+
+    if (!row) throw new Error(`Record not found: ${recordId}`);
+
+    const record = rowToRecord(row);
+    if (record.status !== 'open') {
+      throw new Error(
+        `Record ${recordId} is already closed (status: ${record.status})`,
+      );
+    }
+
+    const closedAt = new Date().toISOString();
+
+    const finalized: IediRecord = {
+      ...record,
+      status,
+      closed_at: closedAt,
+      record_hash: null,
+    };
+
+    const hash = computeHash(finalized);
+    finalized.record_hash = hash;
+
+    this.db
+      .prepare(
+        `UPDATE records SET
+          status      = @status,
+          closed_at   = @closed_at,
+          record_hash = @record_hash
+        WHERE record_id = @record_id`,
+      )
+      .run({
+        status,
+        closed_at: closedAt,
+        record_hash: hash,
+        record_id: recordId,
+      });
+
+    return finalized;
+  }
+
+  /**
+   * Close a record: save delta/insight (recordFeedback semantics), then
+   * finalize (compute hash, set status/closed_at). Both operations run in
+   * a single transaction for atomicity.
+   */
   closeRecord(params: CloseRecordParams): IediRecord {
     return this.db.transaction((): IediRecord => {
       const row = this.db
@@ -389,45 +443,48 @@ export class IediStore {
         );
       }
 
-      const closedAt = new Date().toISOString();
       const insight: Insight | null =
         params.insight_provider || params.insight_requester
           ? { requester: params.insight_requester ?? null, provider: params.insight_provider ?? null }
           : null;
+
+      // Save delta & insight (recordFeedback semantics, but in this transaction)
+      this.db
+        .prepare(`UPDATE records SET delta = ?, insight = ? WHERE record_id = ?`)
+        .run(params.delta, insight ? JSON.stringify(insight) : null, params.record_id);
+
+      // Merge saved fields into the in-memory record for hash computation
+      const updated = { ...record, delta: params.delta, insight };
+
+      const closedAt = new Date().toISOString();
       const status: Status = params.status ?? 'completed';
 
-      const updated: IediRecord = {
-        ...record,
-        delta: params.delta,
-        insight,
+      const finalized: IediRecord = {
+        ...updated,
         status,
         closed_at: closedAt,
         record_hash: null,
       };
 
-      const hash = computeHash(updated);
-      updated.record_hash = hash;
+      const hash = computeHash(finalized);
+      finalized.record_hash = hash;
 
       this.db
         .prepare(
           `UPDATE records SET
-            delta      = @delta,
-            insight    = @insight,
-            status     = @status,
-            closed_at  = @closed_at,
+            status      = @status,
+            closed_at   = @closed_at,
             record_hash = @record_hash
           WHERE record_id = @record_id`,
         )
         .run({
-          delta: params.delta,
-          insight: insight ? JSON.stringify(insight) : null,
           status,
           closed_at: closedAt,
           record_hash: hash,
           record_id: params.record_id,
         });
 
-      return updated;
+      return finalized;
     })();
   }
 
