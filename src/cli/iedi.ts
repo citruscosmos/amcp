@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { Command, Option } from 'commander';
-import { IediStore, computeHash } from '../storage/iedi-store.js';
+import { IediStore, computeHash, signJws } from '../storage/iedi-store.js';
 
 // Prevent ugly EPIPE stack trace when output is piped (e.g. iedi query --json | head)
 process.stdout.on('error', (err) => {
@@ -361,6 +361,46 @@ program
       }
 
       process.exit(issues.length > 0 ? 1 : 0);
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
+// ---- iedi export ---------------------------------------------------------
+
+program
+  .command('export')
+  .description('Export all IEDI records as a JWS-signed portable bundle')
+  .option('--output <file>', 'Output file path (writes to stdout if omitted)')
+  .action((opts) => {
+    checkWorkspace();
+    const store = new IediStore();
+    try {
+      const records = store.listRecords();
+      if (records.length === 0) {
+        console.error('Error: no records to export.');
+        process.exit(1);
+      }
+
+      const payload = {
+        format: 'iedi-export-v0.1',
+        exported_at: new Date().toISOString(),
+        actor_id: store.actorId,
+        record_count: records.length,
+        records,
+      };
+
+      const jws = signJws(payload, store.signingKey, store.actorId);
+
+      if (opts.output) {
+        writeFileSync(opts.output as string, jws, 'utf-8');
+        console.log(`Exported ${records.length} record(s) to ${opts.output}`);
+      } else {
+        console.log(jws);
+      }
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);

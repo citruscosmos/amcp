@@ -233,7 +233,8 @@ Then:
 
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
-$IEDI_BIN add evidence --last \
+RECORD_ID=$(cat "$IEDI_DIR/sessions/current-start.txt")
+$IEDI_BIN add evidence --record-id "$RECORD_ID" \
   --source "<SOURCE>" \
   --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
@@ -368,9 +369,10 @@ If the consuming skill collects Requester Insight (non-empty): save it via Write
 
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
+RECORD_ID=$(cat "$IEDI_DIR/sessions/current-start.txt")
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-$IEDI_BIN close --last \
+$IEDI_BIN close --record-id "$RECORD_ID" \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```
@@ -378,7 +380,7 @@ $IEDI_BIN close --last \
 If Requester Insight is non-empty, append `--insight-requester "$(cat "$IEDI_DIR/sessions/requester-insight.txt")"`.
 
 **Windows CLI length limit:** cmd.exe limits command lines to ~8191 chars. If `$(cat ...)` expansion fails due to length:
-1. Try: `iedi close --last --delta "$(cat "$IEDI_DIR/sessions/delta.txt")"` first (without Provider Insight)
+1. Try: `iedi close --record-id "$RECORD_ID" --delta "$(cat "$IEDI_DIR/sessions/delta.txt")"` first (without Provider Insight)
 2. Then add Provider Insight via `iedi update` if available
 3. Or: return to Phase 3 and reduce the Delta block count
 

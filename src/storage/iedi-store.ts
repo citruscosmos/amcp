@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { createHash } from 'crypto';
+import { createHash, generateKeyPairSync, sign } from 'crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir, userInfo } from 'os';
@@ -90,9 +90,17 @@ function configPath(iediDir: string): string {
   return join(iediDir, 'config.json');
 }
 
+export interface JwkKeyPair {
+  kty: 'OKP';
+  crv: 'Ed25519';
+  x: string;
+  d?: string;
+}
+
 interface Config {
   actor_id: string;
   created_at: string;
+  signing_key?: JwkKeyPair;
 }
 
 function ensureDir(dir: string): void {
@@ -110,13 +118,29 @@ function generateDidAmcp(): string {
   return `did:amcp:${username}-${hash}`;
 }
 
+function generateEd25519KeyPair(): JwkKeyPair {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const jwk = publicKey.export({ format: 'jwk' }) as JwkKeyPair;
+  jwk.d = (privateKey.export({ format: 'jwk' }) as JwkKeyPair).d;
+  return jwk;
+}
+
 function getOrCreateConfig(iediDir: string): { config: Config; isNew: boolean } {
   ensureDir(iediDir);
   const cfgPath = configPath(iediDir);
   if (existsSync(cfgPath)) {
-    return { config: JSON.parse(readFileSync(cfgPath, 'utf-8')) as Config, isNew: false };
+    const config = JSON.parse(readFileSync(cfgPath, 'utf-8')) as Config;
+    if (!config.signing_key) {
+      config.signing_key = generateEd25519KeyPair();
+      writeFileSync(cfgPath, JSON.stringify(config, null, 2), 'utf-8');
+    }
+    return { config, isNew: false };
   }
-  const config: Config = { actor_id: generateDidAmcp(), created_at: new Date().toISOString() };
+  const config: Config = {
+    actor_id: generateDidAmcp(),
+    created_at: new Date().toISOString(),
+    signing_key: generateEd25519KeyPair(),
+  };
   writeFileSync(cfgPath, JSON.stringify(config, null, 2), 'utf-8');
   return { config, isNew: true };
 }
@@ -180,6 +204,24 @@ export function computeHash(record: IediRecord): string {
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
+// ---- JWS signing ---------------------------------------------------------
+
+export function signJws(payload: unknown, signingKey: JwkKeyPair, kid: string): string {
+  const header = { alg: 'EdDSA', kid };
+  const headerB64 = Buffer.from(JSON.stringify(header), 'utf-8').toString('base64url');
+  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
+  const signingInput = `${headerB64}.${payloadB64}`;
+
+  const sig = sign(
+    null,
+    Buffer.from(signingInput, 'utf-8'),
+    { key: signingKey as import('crypto').JsonWebKey, format: 'jwk' },
+  );
+  const sigB64 = sig.toString('base64url');
+
+  return `${signingInput}.${sigB64}`;
+}
+
 // ---- Row deserialization -------------------------------------------------
 
 function rowToRecord(row: Record<string, unknown>): IediRecord {
@@ -205,9 +247,22 @@ function rowToRecord(row: Record<string, unknown>): IediRecord {
 
 // ---- IediStore -----------------------------------------------------------
 
+function loadOrGenerateSigningKey(): JwkKeyPair {
+  try {
+    const iediDir = defaultIediDir();
+    const cfgPath = configPath(iediDir);
+    if (existsSync(cfgPath)) {
+      const config = JSON.parse(readFileSync(cfgPath, 'utf-8')) as Config;
+      if (config.signing_key) return config.signing_key;
+    }
+  } catch { /* no config — generate ephemeral */ }
+  return generateEd25519KeyPair();
+}
+
 export class IediStore {
   private db: Database.Database;
   private _actorId: string;
+  private _signingKey: JwkKeyPair;
   readonly isNewActor: boolean;
 
   constructor(options: IediStoreOptions = {}) {
@@ -217,15 +272,16 @@ export class IediStore {
     if (options.actorId ?? envActorId) {
       this._actorId = (options.actorId ?? envActorId)!;
       this.isNewActor = false;
-      // For :memory: or explicit dbPath with no config needed, skip dir creation.
       if (dbPath !== ':memory:' && !options.actorId) {
         ensureDir(defaultIediDir());
       }
+      this._signingKey = loadOrGenerateSigningKey();
     } else {
       const iediDir = defaultIediDir();
       const { config, isNew } = getOrCreateConfig(iediDir);
       this._actorId = config.actor_id;
       this.isNewActor = isNew;
+      this._signingKey = config.signing_key!;
     }
 
     this.db = new Database(dbPath);
@@ -234,6 +290,10 @@ export class IediStore {
 
   get actorId(): string {
     return this._actorId;
+  }
+
+  get signingKey(): JwkKeyPair {
+    return this._signingKey;
   }
 
   // ---- write operations --------------------------------------------------

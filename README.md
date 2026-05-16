@@ -66,7 +66,7 @@ The `iedi` binary is at `~/.claude/skills/amcp/node_modules/.bin/iedi`.
 ```bash
 iedi query
 iedi open --intent "task description"
-iedi close --last --delta "decisions" --insight-provider "model" --insight-requester "user"
+iedi close --record-id "<RECORD_ID>" --delta "decisions" --insight-provider "model" --insight-requester "user"
 ```
 
 ## License

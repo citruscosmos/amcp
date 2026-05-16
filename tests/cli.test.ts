@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
@@ -588,5 +588,89 @@ describe.sequential('CLI actor ID generation (did:amcp format)', () => {
     const records = JSON.parse(queryOut) as Record<string, unknown>[];
     const secondReqActor = records[0]['requester_actor_id'];
     expect(secondReqActor).toBe(firstActorId);
+  });
+});
+
+// ---- export tests ---------------------------------------------------------
+
+describe.sequential('CLI iedi export --portable', () => {
+  let tmpDir: string;
+  let env: NodeJS.ProcessEnv;
+  let recordId: string;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'iedi-export-test-'));
+    env = {
+      ...process.env,
+      IEDI_DB_PATH: join(tmpDir, 'records.db'),
+      IEDI_ACTOR_ID: 'EXPORT_TEST_ACTOR_000000000000',
+    };
+
+    // Create a record with evidence and close it so we have data to export
+    const openOut = iedi('open --intent "export test record"', env);
+    const m = openOut.match(/Record opened:\s+(\S+)/);
+    recordId = m?.[1] ?? '';
+
+    iedi(`add evidence --record-id "${recordId}" --text "test evidence"`, env);
+    iedi(`close --record-id "${recordId}" --delta "test delta" --status completed`, env);
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('exports JWS compact serialization to stdout', () => {
+    const out = iedi('export', env).trim();
+    const segments = out.split('.');
+    expect(segments).toHaveLength(3);
+
+    // Decode header
+    const header = JSON.parse(Buffer.from(segments[0], 'base64url').toString('utf-8'));
+    expect(header['alg']).toBe('EdDSA');
+    expect(header['kid']).toBeTruthy();
+
+    // Decode payload
+    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf-8'));
+    expect(payload['format']).toBe('iedi-export-v0.1');
+    expect(payload['exported_at']).toBeTruthy();
+    expect(payload['actor_id']).toBe('EXPORT_TEST_ACTOR_000000000000');
+    expect(payload['record_count']).toBe(1);
+    expect(payload['records']).toHaveLength(1);
+    expect(payload['records'][0]['record_id']).toBe(recordId);
+  });
+
+  it('exports to file with --output flag', () => {
+    const outputPath = join(tmpDir, 'export.jws');
+    const out = iedi(`export --output "${outputPath}"`, env).trim();
+    expect(out).toMatch(/Exported \d+ record\(s\) to/);
+
+    const fileContent = readFileSync(outputPath, 'utf-8').trim();
+    const segments = fileContent.split('.');
+    expect(segments).toHaveLength(3);
+
+    // File content should match stdout format
+    const stdoutContent = iedi('export', env).trim();
+    // Same signing key and export time should produce identical JWS
+    // (may differ by exported_at timestamp, so just check structure)
+    const filePayload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf-8'));
+    expect(filePayload['format']).toBe('iedi-export-v0.1');
+    expect(filePayload['records']).toHaveLength(1);
+  });
+
+  it('errors on empty DB', () => {
+    const emptyDir = mkdtempSync(join(tmpdir(), 'iedi-export-empty-'));
+    const emptyEnv = {
+      ...process.env,
+      IEDI_DB_PATH: join(emptyDir, 'records.db'),
+      IEDI_ACTOR_ID: 'EMPTY_EXPORT_ACTOR_000000000',
+    };
+
+    try {
+      const result = iediCatch('export', emptyEnv);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toMatch(/no records to export/i);
+    } finally {
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
   });
 });
