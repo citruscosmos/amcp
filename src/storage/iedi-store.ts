@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { createHash } from 'crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
-import { homedir } from 'os';
+import { homedir, userInfo } from 'os';
 import { ulid } from 'ulid';
 import { canonicalize } from 'json-canonicalize';
 import { runMigrations } from './migrate.js';
@@ -99,13 +99,22 @@ function ensureDir(dir: string): void {
   }
 }
 
+function generateDidAmcp(): string {
+  const username = process.env['AMCP_USERNAME'] || userInfo().username;
+  const hash = createHash('sha256')
+    .update(username + Date.now().toString(), 'utf8')
+    .digest('hex')
+    .slice(0, 12);
+  return `did:amcp:${username}-${hash}`;
+}
+
 function getOrCreateConfig(iediDir: string): { config: Config; isNew: boolean } {
   ensureDir(iediDir);
   const cfgPath = configPath(iediDir);
   if (existsSync(cfgPath)) {
     return { config: JSON.parse(readFileSync(cfgPath, 'utf-8')) as Config, isNew: false };
   }
-  const config: Config = { actor_id: ulid(), created_at: new Date().toISOString() };
+  const config: Config = { actor_id: generateDidAmcp(), created_at: new Date().toISOString() };
   writeFileSync(cfgPath, JSON.stringify(config, null, 2), 'utf-8');
   return { config, isNew: true };
 }
