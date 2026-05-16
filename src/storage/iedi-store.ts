@@ -490,10 +490,16 @@ export class IediStore {
 
   // ---- read operations ---------------------------------------------------
 
-  getOpenRecord(): IediRecord | null {
+  getOpenRecord(actorId?: string): IediRecord | null {
+    const id = actorId ?? this._actorId;
     const row = this.db
-      .prepare(`SELECT * FROM records WHERE status = 'open' LIMIT 1`)
-      .get() as Record<string, unknown> | undefined;
+      .prepare(
+        `SELECT * FROM records
+         WHERE status = 'open'
+           AND (requester_actor_id = ? OR provider_actor_id = ?)
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(id, id) as Record<string, unknown> | undefined;
     return row ? rowToRecord(row) : null;
   }
 
