@@ -57,6 +57,12 @@ export interface CloseRecordParams {
   status?: 'completed' | 'failed';
 }
 
+export interface RecordFeedbackParams {
+  delta: string;
+  insight_provider?: string;
+  insight_requester?: string;
+}
+
 export interface IediStoreOptions {
   dbPath?: string;
   actorId?: string;
@@ -311,6 +317,46 @@ export class IediStore {
 
       return { ...record, evidence: updatedEvidence };
     })();
+  }
+
+  /**
+   * Save delta and insight on an open record without closing it.
+   *
+   * Delta is overwritten on repeat calls (UPDATE SET semantics).
+   * Does NOT run in a transaction — re-running after a crash is safe.
+   *
+   * IMPORTANT: If the process crashes after recordFeedback() but before
+   * #finalizeRecord(), the record stays open with delta/insight saved.
+   * This intermediate state is recoverable (re-run closeRecord which
+   * calls recordFeedback() again — the overwrite is harmless).
+   * Orphan detection is handled by `iedi doctor --fix-orphans` (T-11).
+   */
+  recordFeedback(recordId: string, params: RecordFeedbackParams): IediRecord {
+    const row = this.db
+      .prepare(`SELECT * FROM records WHERE record_id = ?`)
+      .get(recordId) as Record<string, unknown> | undefined;
+
+    if (!row) throw new Error(`Record not found: ${recordId}`);
+
+    const record = rowToRecord(row);
+    if (record.status !== 'open') {
+      throw new Error(
+        `Record ${recordId} is not open (status: ${record.status})`,
+      );
+    }
+
+    const insight: Insight | null =
+      params.insight_provider || params.insight_requester
+        ? { requester: params.insight_requester ?? null, provider: params.insight_provider ?? null }
+        : null;
+
+    this.db
+      .prepare(
+        `UPDATE records SET delta = ?, insight = ? WHERE record_id = ?`,
+      )
+      .run(params.delta, insight ? JSON.stringify(insight) : null, recordId);
+
+    return { ...record, delta: params.delta, insight };
   }
 
   closeRecord(params: CloseRecordParams): IediRecord {
