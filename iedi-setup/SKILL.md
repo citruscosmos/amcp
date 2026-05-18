@@ -80,10 +80,20 @@ IEDI_WORKSPACE を設定しました
 Claude Code を再起動するか、新しいセッションを開始すると有効になります。
 ```
 
+Also include PATH guidance:
+> iedi コマンドをターミナルから直接使用できるようにするには、
+> 以下の行を `~/.bashrc` に追加してください:
+>
+> ```
+> export PATH="$HOME/.claude/skills/amcp/node_modules/.bin:$PATH"
+> ```
+>
+> 追加後、`source ~/.bashrc` で反映されます。
+
 ---
 
 ## Notes
 
 - This skill writes to `.claude/settings.local.json` — Claude Code reads this file for environment variables on session start.
 - Re-run this skill when changing workspaces. The new value overwrites the previous `IEDI_WORKSPACE`.
-- The `iedi` CLI uses `IEDI_WORKSPACE` to locate `.iedi/`. The skill and CLI must reference the same workspace.
+- The `iedi` CLI receives `--db-path` to locate `.iedi/`. Skills pass `--db-path "$IEDI_DIR"` to reference the same workspace.

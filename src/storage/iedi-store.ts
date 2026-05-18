@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { createHash, generateKeyPairSync, sign } from 'crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir, userInfo } from 'os';
 import { ulid } from 'ulid';
@@ -74,16 +74,8 @@ export interface IediStoreOptions {
 
 const SCHEMA_VERSION = '0.3';
 
-function defaultIediDir(): string {
-  const dbPath = process.env['IEDI_DB_PATH'];
-  if (dbPath) return dirname(dbPath);
-  const ws = process.env['IEDI_WORKSPACE'];
-  if (!ws) throw new Error('IEDI_WORKSPACE is not set. Run /iedi-setup first.');
-  return join(ws, '.iedi');
-}
-
 function defaultDbPath(): string {
-  return process.env['IEDI_DB_PATH'] ?? join(defaultIediDir(), 'records.db');
+  return join(process.cwd(), '.iedi', 'records.db');
 }
 
 function configPath(iediDir: string): string {
@@ -129,12 +121,18 @@ function getOrCreateConfig(iediDir: string): { config: Config; isNew: boolean } 
   ensureDir(iediDir);
   const cfgPath = configPath(iediDir);
   if (existsSync(cfgPath)) {
-    const config = JSON.parse(readFileSync(cfgPath, 'utf-8')) as Config;
-    if (!config.signing_key) {
-      config.signing_key = generateEd25519KeyPair();
-      writeFileSync(cfgPath, JSON.stringify(config, null, 2), 'utf-8');
+    try {
+      const config = JSON.parse(readFileSync(cfgPath, 'utf-8')) as Config;
+      if (!config.actor_id) throw new Error('actor_id missing');
+      if (!config.signing_key) {
+        config.signing_key = generateEd25519KeyPair();
+        writeFileSync(cfgPath, JSON.stringify(config, null, 2), 'utf-8');
+      }
+      return { config, isNew: false };
+    } catch {
+      const backupPath = cfgPath + '.bak.' + Date.now();
+      copyFileSync(cfgPath, backupPath);
     }
-    return { config, isNew: false };
   }
   const config: Config = {
     actor_id: generateDidAmcp(),
@@ -143,6 +141,14 @@ function getOrCreateConfig(iediDir: string): { config: Config; isNew: boolean } 
   };
   writeFileSync(cfgPath, JSON.stringify(config, null, 2), 'utf-8');
   return { config, isNew: true };
+}
+
+function globalConfigPath(): string {
+  return join(homedir(), '.iedi', 'config.json');
+}
+
+function getOrCreateGlobalConfig(): { config: Config; isNew: boolean } {
+  return getOrCreateConfig(join(homedir(), '.iedi'));
 }
 
 // ---- SQLite schema -------------------------------------------------------
@@ -247,15 +253,21 @@ function rowToRecord(row: Record<string, unknown>): IediRecord {
 
 // ---- IediStore -----------------------------------------------------------
 
-function loadOrGenerateSigningKey(): JwkKeyPair {
+function loadOrGenerateSigningKey(iediDir: string): JwkKeyPair {
   try {
-    const iediDir = defaultIediDir();
     const cfgPath = configPath(iediDir);
     if (existsSync(cfgPath)) {
       const config = JSON.parse(readFileSync(cfgPath, 'utf-8')) as Config;
       if (config.signing_key) return config.signing_key;
     }
-  } catch { /* no config — generate ephemeral */ }
+  } catch { /* no config — try global, then generate ephemeral */ }
+  try {
+    const globalCfgPath = globalConfigPath();
+    if (existsSync(globalCfgPath)) {
+      const config = JSON.parse(readFileSync(globalCfgPath, 'utf-8')) as Config;
+      if (config.signing_key) return config.signing_key;
+    }
+  } catch { /* no global config either */ }
   return generateEd25519KeyPair();
 }
 
@@ -266,22 +278,30 @@ export class IediStore {
   readonly isNewActor: boolean;
 
   constructor(options: IediStoreOptions = {}) {
-    const envActorId = process.env['IEDI_ACTOR_ID'];
     const dbPath = options.dbPath ?? defaultDbPath();
+    const iediDir = dirname(dbPath);
 
-    if (options.actorId ?? envActorId) {
-      this._actorId = (options.actorId ?? envActorId)!;
+    if (options.actorId) {
+      this._actorId = options.actorId;
       this.isNewActor = false;
-      if (dbPath !== ':memory:' && !options.actorId) {
-        ensureDir(defaultIediDir());
-      }
-      this._signingKey = loadOrGenerateSigningKey();
+      this._signingKey = loadOrGenerateSigningKey(iediDir);
     } else {
-      const iediDir = defaultIediDir();
-      const { config, isNew } = getOrCreateConfig(iediDir);
-      this._actorId = config.actor_id;
-      this.isNewActor = isNew;
-      this._signingKey = config.signing_key!;
+      const wsConfig = getOrCreateConfig(iediDir);
+      if (!wsConfig.isNew) {
+        this._actorId = wsConfig.config.actor_id;
+        this.isNewActor = false;
+        this._signingKey = wsConfig.config.signing_key!;
+      } else {
+        const globalConfig = getOrCreateGlobalConfig();
+        this._actorId = globalConfig.config.actor_id;
+        this.isNewActor = globalConfig.isNew;
+        this._signingKey = globalConfig.config.signing_key!;
+        writeFileSync(
+          join(iediDir, 'config.json'),
+          JSON.stringify(globalConfig.config, null, 2),
+          'utf-8',
+        );
+      }
     }
 
     this.db = new Database(dbPath);

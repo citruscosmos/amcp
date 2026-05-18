@@ -27,14 +27,11 @@ Before any `iedi` command or file operation, run this once:
 
 ```bash
 AMCP_HOME="${AMCP_HOME:-$HOME/.claude/skills/amcp}"
-IEDI_BIN="$AMCP_HOME/node_modules/.bin/iedi"
-
-if [ ! -x "$IEDI_BIN" ]; then
-  echo "CLI: not found — run /iedi-setup to install" >&2
-  exit 1
-fi
-
 IEDI_DIR="${IEDI_WORKSPACE:?IEDI_WORKSPACE is not set — run /iedi-setup first}/.iedi"
+command -v iedi >/dev/null 2>&1 || {
+  echo "CLI: iedi not found in PATH — add $AMCP_HOME/node_modules/.bin to PATH or run /iedi-setup" >&2
+  exit 1
+}
 ```
 
 The `:?` form exits with an error if `IEDI_WORKSPACE` is unset, preventing silent failures.
@@ -135,7 +132,7 @@ Use the user's response as the intent string.
 #### Step O6: Run iedi open
 
 ```bash
-$IEDI_BIN open \
+iedi open --db-path "$IEDI_DIR" \
   --intent "<INTENT>"
 ```
 
@@ -180,7 +177,7 @@ IEDIセッション開始
 #### Step E1: Check for open record
 
 ```bash
-$IEDI_BIN query --json --limit 5
+iedi query --db-path "$IEDI_DIR" --json --limit 5
 ```
 
 Find the record with `"status": "open"` and save its `record_id` and `intent`.
@@ -234,7 +231,7 @@ Then:
 ```bash
 IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 RECORD_ID=$(cat "$IEDI_DIR/sessions/current-start.txt")
-$IEDI_BIN add evidence --record-id "$RECORD_ID" \
+iedi add evidence --db-path "$IEDI_DIR" --record-id "$RECORD_ID" \
   --source "<SOURCE>" \
   --text "$(cat "$IEDI_DIR/sessions/evidence.md")"
 ```
@@ -372,7 +369,7 @@ IEDI_DIR="${IEDI_WORKSPACE:?}/.iedi"
 RECORD_ID=$(cat "$IEDI_DIR/sessions/current-start.txt")
 DELTA=$(cat "$IEDI_DIR/sessions/delta.txt")
 PROVIDER=$(cat "$IEDI_DIR/sessions/provider-insight.md")
-$IEDI_BIN close --record-id "$RECORD_ID" \
+iedi close --db-path "$IEDI_DIR" --record-id "$RECORD_ID" \
   --delta "$DELTA" \
   --insight-provider "$PROVIDER"
 ```
@@ -589,5 +586,5 @@ grep -q '^- \*\*Confidence:\*\*' "$PROVIDER_FILE" || echo "MISSING: Confidence f
 - All confidence numeric values are subjective. Recalibrate after accumulating 50 records.
 - Long text must not be passed directly as CLI arguments. Save to `$IEDI_DIR/sessions/` and use `$(cat <file>)`.
 - Windows command-line length limit: ~8191 chars (cmd.exe). If `$(cat ...)` expansion fails, reduce Delta block count.
-- `iedi` CLI uses `IEDI_WORKSPACE` env var to locate `.iedi/`. Skills and CLI must reference the same DB.
+- `iedi` CLI receives `--db-path "$IEDI_DIR"` to locate `.iedi/`. Skills and CLI reference the same DB.
 - If an open record already exists, `iedi open` fails with an error (by design).

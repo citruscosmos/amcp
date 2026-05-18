@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { Command, Option } from 'commander';
 import { IediStore, computeHash, signJws } from '../storage/iedi-store.js';
 
@@ -19,15 +20,6 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf-8').trim();
 }
 
-// ---- early validation ----------------------------------------------------
-
-function checkWorkspace(): void {
-  if (!process.env['IEDI_WORKSPACE'] && !process.env['IEDI_DB_PATH']) {
-    console.error('Error: IEDI_WORKSPACE is not set. Please define the IEDI_WORKSPACE environment variable.');
-    process.exit(1);
-  }
-}
-
 // ---- evidence source resolution -------------------------------------------
 
 function resolveSource(opts: { source?: string; sessionSummary?: unknown; gitDiff?: unknown }): string {
@@ -44,7 +36,8 @@ const program = new Command();
 program
   .name('iedi')
   .description('IEDI record logger — AMCP Approach A (internal solo logger)')
-  .version('0.1.0');
+  .version('0.1.0')
+  .option('--db-path <path>', 'Path to .iedi directory containing records.db');
 
 // ---- iedi open -----------------------------------------------------------
 
@@ -54,13 +47,13 @@ program
   .requiredOption('-i, --intent <text>', 'Pre-declared intent statement')
   .option('-t, --tool-called <name>', 'Tool or service identifier (e.g. coding_session)')
   .action((opts) => {
-    checkWorkspace();
-    const store = new IediStore();
+    const dbPath = program.opts().dbPath
+      ? join(program.opts().dbPath, 'records.db')
+      : undefined;
+    const store = new IediStore({ dbPath });
     try {
       if (store.isNewActor) {
-        const iediDir = process.env['IEDI_DB_PATH']
-          ? process.env['IEDI_DB_PATH'].replace(/[/\\][^/\\]+$/, '') // dirname
-          : `${process.env['IEDI_WORKSPACE']}/.iedi`;
+        const iediDir = (opts.dbPath as string) ?? join(process.cwd(), '.iedi');
         console.log(`First run — actor ID created: ${store.actorId}`);
         console.log(`Config: ${iediDir}/config.json  DB: ${iediDir}/records.db\n`);
       }
@@ -94,15 +87,16 @@ addCmd
   .option('--git-diff', 'Capture git status + git diff HEAD as evidence')
   .option('--source <source>', 'Evidence source label (auto-set per option, or override)')
   .action(async (opts) => {
-    checkWorkspace();
-
     const hasContent = !!(opts.text || opts.sessionSummary || opts.gitDiff);
     if (!hasContent && process.stdin.isTTY) {
       console.error('Error: no text provided. Use --text, --session-summary, --git-diff, or pipe content via stdin.');
       process.exit(1);
     }
 
-    const store = new IediStore();
+    const dbPath = program.opts().dbPath
+      ? join(program.opts().dbPath, 'records.db')
+      : undefined;
+    const store = new IediStore({ dbPath });
     try {
       const recordId = opts.recordId as string;
       const source = resolveSource(opts);
@@ -175,9 +169,10 @@ program
   .option('--insight-requester <text>', 'Retrospective insight (user perspective)')
   .addOption(new Option('--status <status>', 'Completion status').choices(['completed', 'failed']).default('completed'))
   .action((opts) => {
-    checkWorkspace();
-
-    const store = new IediStore();
+    const dbPath = program.opts().dbPath
+      ? join(program.opts().dbPath, 'records.db')
+      : undefined;
+    const store = new IediStore({ dbPath });
     try {
       const recordId = opts.recordId as string;
 
@@ -218,8 +213,10 @@ program
   .option('--limit <n>', 'Maximum records to show', '20')
   .option('--json', 'Output raw JSON')
   .action((opts) => {
-    checkWorkspace();
-    const store = new IediStore();
+    const dbPath = program.opts().dbPath
+      ? join(program.opts().dbPath, 'records.db')
+      : undefined;
+    const store = new IediStore({ dbPath });
     try {
       const parsedLimit = parseInt(opts.limit as string, 10);
       if (isNaN(parsedLimit) || parsedLimit < 1) {
@@ -269,8 +266,10 @@ program
   .option('--verbose', 'Show per-record verification details')
   .option('--json', 'Output results as JSON')
   .action((opts) => {
-    checkWorkspace();
-    const store = new IediStore();
+    const dbPath = program.opts().dbPath
+      ? join(program.opts().dbPath, 'records.db')
+      : undefined;
+    const store = new IediStore({ dbPath });
     try {
       const records = store.listRecords();
       if (records.length === 0) {
@@ -376,8 +375,10 @@ program
   .description('Export all IEDI records as a JWS-signed portable bundle')
   .option('--output <file>', 'Output file path (writes to stdout if omitted)')
   .action((opts) => {
-    checkWorkspace();
-    const store = new IediStore();
+    const dbPath = program.opts().dbPath
+      ? join(program.opts().dbPath, 'records.db')
+      : undefined;
+    const store = new IediStore({ dbPath });
     try {
       const records = store.listRecords();
       if (records.length === 0) {
